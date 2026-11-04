@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛡️ Money Mule Anomaly Detection Engine
+# 🛡️Mule Account Detection Engine
 **Real-Time Illicit Financial Flow & Post-KYC Mule Account Detection**
 
 [![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -21,7 +21,7 @@
 
 ### 📌 Overview
 
-The **Money Mule Anomaly Detection Engine** is an enterprise-focused compliance framework designed to catch money mule accounts that bypass traditional KYC screening. By analyzing post-activation transaction velocity, structural fan-in/fan-out transfers, and device overlaps, the engine scores high-risk accounts and auto-generates regulatory Suspicious Activity Reports (SARs).
+The **Mule Account Detection Engine** is an enterprise-focused compliance framework designed to catch money mule accounts that bypass traditional KYC screening. By analyzing post-activation transaction velocity, structural fan-in/fan-out transfers, and device overlaps, the engine scores high-risk accounts and auto-generates regulatory Suspicious Activity Reports (SARs).
 
 ---
 
