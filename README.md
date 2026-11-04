@@ -14,9 +14,7 @@
 | 🤖 Agentic Scoring Model | ⬜ Pending | 0% |
 | 🚀 Prototype Demo | ⬜ Pending | 0% |
 
-<p align="center">
-  <img src="./architecture.svg" alt="Architecture Diagram" width="100%" />
-</p>
+![Architecture Diagram](architecture.svg)
 
 ### 🧰 Core Tech & Tooling Stack
 
