@@ -6,8 +6,6 @@
   <img src="https://geps.dev/progress/10?dangerColor=ff4b4b&warningColor=ffa500&happyColor=00e676" alt="Progress Bar" width="600" />
 </p>
 
-[██░░░░░░░░░░░░░░░░░░░░░░░░░░] 10%
-
 
 | Component | Status | Progress |
 | :--- | :--- | :--- |
