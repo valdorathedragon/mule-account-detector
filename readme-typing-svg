@@ -1,15 +1,30 @@
-### 📌 Overview
-
 <p align="center">
   <a href="https://git.io/typing-svg">
-    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&pause=1000&color=61AFEF&center=true&vCenter=true&width=750&lines=Money+Mule+Anomaly+Detection+Engine;Detecting+post-KYC+illicit+financial+flows;Real-time+velocity+spikes+%26+pass-through+ratio+analysis;Unsupervised+IsolationForest+risk+scoring;SHAP+attributions+%2B+automated+LLM+SAR+generation" alt="Typing SVG" />
+    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&pause=1000&color=61AFEF&center=true&vCenter=true&width=750&lines=Mule+Account+Detection+Engine;Real-time+transaction+velocity+analysis;Fan-in+%26+Fan-out+graph+pattern+tracing;Unsupervised+IsolationForest+anomaly+scoring;Automated+LLM-generated+SAR+compliance+reports" alt="Typing SVG" />
   </a>
 </p>
 
+<div align="center">
+
+# 🛡️ Mule Account Detection Engine
+**Real-Time Illicit Financial Flow & Post-KYC Anomaly Scoring**
+
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Pandas](https://img.shields.io/badge/Pandas-150458?style=for-the-badge&logo=pandas&logoColor=white)](https://pandas.pydata.org/)
+[![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-F7931E?style=for-the-badge&logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![Status](https://img.shields.io/badge/Build_Status-10%25_Active-orange?style=for-the-badge)](#-development-pipeline)
+
+<br />
+
+<a href="https://git.io/typing-svg">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&pause=1000&color=61AFEF&center=true&vCenter=true&width=750&lines=Mule+Account+Detection+Engine;Real-time+transaction+velocity+analysis;Fan-in+%26+Fan-out+graph+pattern+tracing;Unsupervised+IsolationForest+anomaly+scoring;Automated+LLM-generated+SAR+compliance+reports" alt="Typing SVG" />
+</a>
+
+</div>
+
 ---
 
-### 🛡️ System Mission
+### 📌 Overview
 
-The **Mule Account Detection Engine** is an AI-driven security framework engineered to identify post-onboarding mule account activity and rapid illicit fund laundering. By monitoring post-activation transaction velocity spikes, structural fan-in/fan-out flows, and device overlaps, the system detects suspicious accounts that pass standard KYC checks.
-
-Designed as an enterprise compliance tool, it combines unsupervised anomaly scoring with automated, explainable regulatory reporting to minimize manual investigation overhead.
+The **Mule Account Detection Engine** is an enterprise compliance tool designed to catch money mule accounts that bypass standard KYC checks[cite: 5]. By monitoring post-activation transaction velocity spikes, structural fan-in/fan-out flows, and device overlaps, the system detects suspicious activity and auto-generates regulatory Suspicious Activity Reports (SARs)[cite: 5].
