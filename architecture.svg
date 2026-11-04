@@ -31,21 +31,21 @@
 
   <!-- Node 1 -->
   <rect x="30" y="70" width="160" height="80" class="node" stroke="#61afef" />
-  <text x="110" y="105" class="text-title">💳 Transaction Stream</text>
+  <text x="110" y="105" class="text-title">Transaction Stream</text>
   <text x="110" y="125" class="text-sub">Real-Time Ingestion</text>
 
   <!-- Node 2 -->
   <rect x="250" y="70" width="160" height="80" class="node" stroke="#e5c07b" />
-  <text x="330" y="105" class="text-title">📊 Statistical Filter</text>
+  <text x="330" y="105" class="text-title">Statistical Filter</text>
   <text x="330" y="125" class="text-sub">Pandas / Scikit-Learn</text>
 
   <!-- Node 3 -->
   <rect x="470" y="70" width="160" height="80" class="node" stroke="#98c379" />
-  <text x="550" y="105" class="text-title">🤖 AI Reasoning Engine</text>
-  <text x="550" y="125" class="text-sub">Context & Threat Scoring</text>
+  <text x="550" y="105" class="text-title">AI Reasoning Engine</text>
+  <text x="550" y="125" class="text-sub">Context and Threat Scoring</text>
 
   <!-- Node 4 -->
   <rect x="690" y="70" width="140" height="80" class="node" stroke="#e06c75" />
-  <text x="760" y="105" class="text-title">🚨 Mule Alert Pipeline</text>
+  <text x="760" y="105" class="text-title">Mule Alert Pipeline</text>
   <text x="760" y="125" class="text-sub">High-Risk Reporting</text>
 </svg>
