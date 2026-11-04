@@ -6,6 +6,12 @@
   <img src="https://geps.dev/progress/10?dangerColor=ff4b4b&warningColor=ffa500&happyColor=00e676" alt="Progress Bar" width="300" />
 </p>
 
+<p align="center">
+  <a href="https://git.io/typing-svg">
+    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=500&size=16&pause=1000&color=61AFEF&center=true&vCenter=true&width=750&lines=Money+Mule+Anomaly+Detection+Engine;Detecting+post-KYC+illicit+financial+flows;Real-time+velocity+spikes+%26+pass-through+ratio+analysis;Unsupervised+IsolationForest+risk+scoring;SHAP+attributions+%2B+automated+LLM+SAR+generation" alt="Typing SVG" />
+  </a>
+</p>
+
 
 | Component | Status | Progress |
 | :--- | :--- | :--- |
