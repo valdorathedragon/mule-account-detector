@@ -14,31 +14,22 @@
 | 🤖 Agentic Scoring Model | ⬜ Pending | 0% |
 | 🚀 Prototype Demo | ⬜ Pending | 0% |
 
-### ⚡Tech Architecture Overview
+### ⚡ Tech Architecture Overview
 
-   ┌──────────────────────────────┐
-   │   Transaction Stream Data    │
-   └──────────────┬───────────────┘
-                  │
-                  ▼
-   ┌──────────────────────────────┐
-   │ Statistical Anomaly Filter   │
-   │   (Pandas / Scikit-Learn)    │
-   └──────────────┬───────────────┘
-                  │
-          [Flagged Anomalies]
-                  │
-                  ▼
-   ┌──────────────────────────────┐
-   │     AI Reasoning Engine      │
-   │   (Context & Threat Scoring) │
-   └──────────────┬───────────────┘
-                  │
-                  ▼
-   ┌──────────────────────────────┐
-   │   High-Risk Mule Account     │
-   │    Alert & Report Pipeline   │
-   └──────────────────────────────┘
+<p align="center">
+  <img src="https://mermaid.ink/img/p3e1a2Vjd29yaz90aGVtZT1kYXJrJnA9c3Zn&type=png" alt="Architecture Diagram" width="100%" />
+</p>
+
+```mermaid
+graph TD
+    A[💳 Transaction Stream Data] -->|Real-time Ingestion| B[📊 Statistical Anomaly Filter<br/><i>Pandas / Scikit-Learn</i>]
+    B -->|Flagged Anomalies| C[🤖 AI Reasoning Engine<br/><i>Context & Threat Scoring</i>]
+    C -->|High-Risk Detection| D[🚨 High-Risk Mule Account<br/><i>Alert & Report Pipeline</i>]
+
+    style A fill:#1f2937,stroke:#61afef,stroke-width:2px,color:#fff
+    style B fill:#1f2937,stroke:#e5c07b,stroke-width:2px,color:#fff
+    style C fill:#1f2937,stroke:#98c379,stroke-width:2px,color:#fff
+    style D fill:#1f2937,stroke:#e06c75,stroke-width:2px,color:#fff
 
    ### 🧰 Core Tech & Tooling Stack
 
