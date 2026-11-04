@@ -14,20 +14,72 @@
 | 🤖 Agentic Scoring Model | ⬜ Pending | 0% |
 | 🚀 Prototype Demo | ⬜ Pending | 0% |
 
-### ⚡ Tech Architecture Overview
+<p align="center">
+  <svg width="100%" height="220" viewBox="0 0 850 220" xmlns="http://www.w3.org/2000/svg" style="background:#0d1117; border-radius:12px; border:1px solid #30363d;">
+    <style>
+      .node { fill: #161b22; stroke-width: 2px; rx: 8px; }
+      .text-title { fill: #f0f6fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: bold; font-size: 13px; text-anchor: middle; }
+      .text-sub { fill: #8b949e; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11px; text-anchor: middle; }
+      
+      /* Glowing Pulse Animation */
+      .connection-line { stroke: #30363d; stroke-width: 3px; stroke-dasharray: 6 6; }
+      .pulse-path { fill: none; stroke-width: 3px; stroke-linecap: round; }
+      
+      .pulse-1 { stroke: #61afef; stroke-dasharray: 20 200; animation: flow1 4s infinite linear; }
+      .pulse-2 { stroke: #e5c07b; stroke-dasharray: 20 200; animation: flow2 4s infinite linear; animation-delay: 1s; }
+      .pulse-3 { stroke: #98c379; stroke-dasharray: 20 200; animation: flow3 4s infinite linear; animation-delay: 2s; }
+      
+      @keyframes flow1 {
+        0% { stroke-dashoffset: 220; }
+        100% { stroke-dashoffset: 0; }
+      }
+      @keyframes flow2 {
+        0% { stroke-dashoffset: 220; }
+        100% { stroke-dashoffset: 0; }
+      }
+      @keyframes flow3 {
+        0% { stroke-dashoffset: 220; }
+        100% { stroke-dashoffset: 0; }
+      }
+    </style>
 
-```mermaid
-graph TD
-    A[💳 Transaction Stream Data] -->|Real-time Ingestion| B[📊 Statistical Anomaly Filter<br/>Pandas / Scikit-Learn]
-    B -->|Flagged Anomalies| C[🤖 AI Reasoning Engine<br/>Context & Threat Scoring]
-    C -->|High-Risk Detection| D[🚨 High-Risk Mule Account<br/>Alert & Report Pipeline]
+    <!-- Connections & Animated Flow Pulses -->
+    <!-- Line 1 -->
+    <path d="M 190 110 L 250 110" class="connection-line" />
+    <path d="M 190 110 L 250 110" class="pulse-path pulse-1" />
+    
+    <!-- Line 2 -->
+    <path d="M 410 110 L 470 110" class="connection-line" />
+    <path d="M 410 110 L 470 110" class="pulse-path pulse-2" />
+    
+    <!-- Line 3 -->
+    <path d="M 630 110 L 690 110" class="connection-line" />
+    <path d="M 630 110 L 690 110" class="pulse-path pulse-3" />
 
-    style A fill:#1f2937,stroke:#61afef,stroke-width:2px,color:#fff
-    style B fill:#1f2937,stroke:#e5c07b,stroke-width:2px,color:#fff
-    style C fill:#1f2937,stroke:#98c379,stroke-width:2px,color:#fff
-    style D fill:#1f2937,stroke:#e06c75,stroke-width:2px,color:#fff
+    <!-- Node 1: Stream Data -->
+    <rect x="30" y="70" width="160" height="80" class="node" stroke="#61afef" />
+    <text x="110" y="105" class="text-title">💳 Transaction Stream</text>
+    <text x="110" y="125" class="text-sub">Real-Time Ingestion</text>
 
-   ### 🧰 Core Tech & Tooling Stack
+    <!-- Node 2: Statistical Filter -->
+    <rect x="250" y="70" width="160" height="80" class="node" stroke="#e5c07b" />
+    <text x="330" y="105" class="text-title">📊 Statistical Filter</text>
+    <text x="330" y="125" class="text-sub">Pandas / Scikit-Learn</text>
+
+    <!-- Node 3: AI Reasoning -->
+    <rect x="470" y="70" width="160" height="80" class="node" stroke="#98c379" />
+    <text x="550" y="105" class="text-title">🤖 AI Reasoning Engine</text>
+    <text x="550" y="125" class="text-sub">Context & Threat Scoring</text>
+
+    <!-- Node 4: Alert Pipeline -->
+    <rect x="690" y="70" width="140" height="80" class="node" stroke="#e06c75" />
+    <text x="760" y="105" class="text-title">🚨 Mule Alert Pipeline</text>
+    <text x="760" y="125" class="text-sub">High-Risk Reporting</text>
+  </svg>
+</p>
+
+
+### 🧰 Core Tech & Tooling Stack
 
 <p align="left">
   <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
