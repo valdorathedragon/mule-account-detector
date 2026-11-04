@@ -15,7 +15,7 @@
 | 🚀 Prototype Demo | ⬜ Pending | 0% |
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/valdorathedragon/mule-account-detector/main/architecture.svg" alt="Architecture Diagram" width="100%" />
+  <img src="./architecture.svg" alt="Architecture Diagram" width="100%" />
 </p>
 
 ### 🧰 Core Tech & Tooling Stack
