@@ -12,9 +12,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795002807.9766638,
-    "seen": 1795007429.897522,
-    "ast_hash": "2d7946dfff3bd1ea6a617de5fbab7453",
+    "mtime": 1795018414.2908409,
+    "seen": 1795018422.5110815,
+    "ast_hash": "1ab36c9f076eb5492f1d7ab7018f94ea",
     "semantic_hash": ""
   },
   "docs/CHANGELOG.md": {
@@ -69,6 +69,12 @@
     "mtime": 1795016540.0977275,
     "seen": 1795016546.880764,
     "ast_hash": "351baaf282baeba89248f09d0900826f",
+    "semantic_hash": ""
+  },
+  "docs/Mule_Account_Detector_v1_Changelog.pdf": {
+    "mtime": 1795018381.497926,
+    "seen": 1795018422.5110855,
+    "ast_hash": "ffb2173b6a3f178f440201c25fc6e1a7",
     "semantic_hash": ""
   }
 }
