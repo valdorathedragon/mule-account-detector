@@ -8,4 +8,11 @@ __pycache__/
 *.joblib
 *.html
 scratch/
+data/raw/
 
+models/generations/
+models/.artifact_meta_*.json
+data/*.csv
+data/*.html
+__pycache__/
+*.py[cod]

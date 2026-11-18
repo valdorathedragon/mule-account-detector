@@ -13,8 +13,8 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-FEATURES_PATH = PROJECT_ROOT / "data" / "upi_mule_features.csv"
-SCORED_PATH = PROJECT_ROOT / "data" / "scored_upi_data.csv"
+FEATURES_PATH = PROJECT_ROOT / "data" / "bank_mule_features.csv"
+SCORED_PATH = PROJECT_ROOT / "data" / "scored_bank_data.csv"
 MODEL_PATH = PROJECT_ROOT / "models" / "iso_forest.joblib"
 
 FEATURE_COLUMNS = ["amount", "Pass_Through_Ratio", "Near_Limit_Velocity"]
@@ -125,7 +125,7 @@ def train_and_score(
         gen_dir = gen_root / gen_id
         gen_dir.mkdir(parents=True, exist_ok=True)
         gen_model = gen_dir / "iso_forest.joblib"
-        gen_scored = gen_dir / "scored_upi_data.csv"
+        gen_scored = gen_dir / "scored_bank_data.csv"
 
         cleanup_paths: list[Path] = []
         try:
@@ -257,7 +257,10 @@ def _build_top_drivers(
 
     near_limit = int(involved["Near_Limit_Velocity"].sum())
     if near_limit > 0:
-        drivers.append(f"{near_limit} near-limit UPI transfer(s) in INR 90,000-1,00,000 range")
+        drivers.append(
+            f"{near_limit} structured transfer(s) near regulatory thresholds "
+            "(INR 45,000-50,000 PAN / INR 1,80,000-2,00,000 RTGS bands)"
+        )
 
     if not incoming.empty and not outgoing.empty:
         first_in = pd.to_datetime(incoming["timestamp"]).min()
@@ -330,16 +333,25 @@ def main() -> None:
     print(f"Model saved to {MODEL_PATH.relative_to(PROJECT_ROOT)}")
     print(f"Scored data saved to {SCORED_PATH.relative_to(PROJECT_ROOT)} ({len(df)} rows)")
     print(f"Risk tiers: {df['Risk_Tier'].value_counts().to_dict()}")
-    print(f"HIGH-tier precision vs labels: {precision:.4f} | recall: {recall:.4f}")
-    accounts = set(df["nameOrig"].astype(str)) | set(df["nameDest"].astype(str))
-    demo_account = (
-        "mule_c1_hub01@ybl"
-        if "mule_c1_hub01@ybl" in accounts
-        else (str(df.loc[df["Risk_Score"].idxmax(), "nameOrig"]) if not df.empty else None)
+    print(
+        f"Benchmark HIGH alignment vs is_mule_label (label-calibrated INR/PTR dataset): "
+        f"precision={precision:.4f} | recall={recall:.4f}"
     )
-    if demo_account:
-        sample = analyze_account(demo_account, df=df)
-        print(f"Sample analyze_account: { {k: v for k, v in sample.items() if k != 'counterparties'} }")
+    orig_max = df.groupby(df["nameOrig"].astype(str))["Risk_Score"].max()
+    dest_max = df.groupby(df["nameDest"].astype(str))["Risk_Score"].max()
+    acct_scores = pd.concat([orig_max, dest_max.drop(labels=orig_max.index, errors="ignore")]).sort_values(
+        ascending=False
+    )
+    tier_samples: dict[str, str] = {}
+    for tier_name, lo, hi in (("HIGH", HIGH_THRESHOLD, 100.01), ("MEDIUM", MEDIUM_THRESHOLD, HIGH_THRESHOLD), ("LOW", 0.0, MEDIUM_THRESHOLD)):
+        candidates = acct_scores[(acct_scores >= lo) & (acct_scores < hi)]
+        if not candidates.empty:
+            tier_samples[tier_name] = str(candidates.index[0])
+
+    print(f"Sample accounts by tier: {tier_samples}")
+    if "HIGH" in tier_samples:
+        sample = analyze_account(tier_samples["HIGH"], df=df)
+        print(f"Sample analyze_account (HIGH): { {k: v for k, v in sample.items() if k != 'counterparties'} }")
 
 
 if __name__ == "__main__":

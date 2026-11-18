@@ -11,12 +11,25 @@ SYSTEM_INSTRUCTION = (
     "You are a senior AML Compliance Officer at an Indian scheduled commercial bank, "
     "reporting to the Financial Intelligence Unit - India (FIU-IND) under the Prevention of "
     "Money Laundering Act, 2002 and RBI KYC Master Directions. Write factual, regulator-ready "
-    "Suspicious Activity Reports. Never invent figures not present in the evidence."
+    "Suspicious Activity Reports for Subject Bank Accounts (covering Savings, Current, and "
+    "Corporate account types). Never invent figures or payment rails not present in the evidence."
 )
 
 
+def _account_category_label(account_id: str) -> str:
+    """Derive subject bank account category from canonical identifier prefix."""
+    upper = str(account_id).upper()
+    if upper.startswith("SAV_"):
+        return "Savings Subject Bank Account"
+    if upper.startswith("CUR_"):
+        return "Current Subject Bank Account"
+    if upper.startswith("CORP_"):
+        return "Corporate Subject Bank Account"
+    return "Subject Bank Account"
+
+
 def format_inr(value: float) -> str:
-    """Format a number using Indian digit grouping, e.g. 1234567.8 -> INR 12,34,567.80."""
+    """Format a number using Indian number formatting, e.g. 1234567.8 -> INR 12,34,567.80."""
     sign = "-" if value < 0 else ""
     int_part, dec_part = f"{abs(value):.2f}".split(".")
     if len(int_part) > 3:
@@ -107,11 +120,28 @@ def _figures_match_evidence(text: str, analysis_payload: dict, graph_stats: dict
         abs(round(float(graph_stats.get("degree_asymmetry", 0.0)), 4)),
         float(linked_count),
     }
+    known_ids = {
+        str(x)
+        for x in (
+            [analysis_payload.get("account_id", "")]
+            + list(analysis_payload.get("counterparties", []) or [])
+            + list(graph_stats.get("high_risk_nodes", []) or [])
+        )
+        if x
+    }
+    id_pattern = (
+        re.compile("|".join(re.escape(k) for k in sorted(known_ids, key=len, reverse=True)))
+        if known_ids
+        else None
+    )
+
     for driver in analysis_payload.get("top_drivers", []) or []:
-        for tok in re.findall(r"\d[\d,]*\.?\d*", str(driver)):
+        driver_scan = id_pattern.sub("", str(driver)) if id_pattern else str(driver)
+        for tok in re.findall(r"\d[\d,]*\.?\d*", driver_scan):
             allowed_nums.add(round(float(tok.replace(",", "")), 4))
 
-    for raw_tok in re.findall(r"\d[\d,]*\.?\d*", text):
+    scan_text = id_pattern.sub("", text) if id_pattern else text
+    for raw_tok in re.findall(r"\d[\d,]*\.?\d*", scan_text):
         cleaned = raw_tok.replace(",", "")
         try:
             val = float(cleaned)
@@ -140,15 +170,16 @@ def _build_prompt(analysis_payload: dict, graph_stats: dict) -> str:
     typology_rule, _ = _tier_guidance(tier)
     inflow_str = format_inr(float(payload.get("total_inflow", 0.0)))
     outflow_str = format_inr(float(payload.get("total_outflow", 0.0)))
+    account_category = _account_category_label(account)
     return (
         "Draft a two-paragraph factual evidence narrative in plain prose (no headings, bullets, "
-        "or markdown).\n"
-        f"Paragraph 1: Subject account, risk score and tier, total inflow ({inflow_str}) and "
-        f"total outflow ({outflow_str}) using those exact INR strings, the Pass-Through Ratio, "
-        "and key behavioural observations grounded strictly in the supplied drivers.\n"
+        f"or markdown) for a Subject Bank Account ({account_category}).\n"
+        f"Paragraph 1: Subject Bank Account ({account}, {account_category}), risk score and tier, "
+        f"total inflow ({inflow_str}) and total outflow ({outflow_str}) using those exact INR strings, "
+        "the Pass-Through Ratio, and key behavioural observations grounded strictly in the supplied drivers.\n"
         "Paragraph 2: Network topology evidence (in-degree, out-degree, degree asymmetry, fan-in / "
-        "fan-out pattern, and linked_high_risk_neighbors excluding the subject), followed by this "
-        f"tier-calibrated assessment: {typology_rule}\n"
+        "fan-out pattern, and linked_high_risk_neighbors excluding the Subject Bank Account), "
+        f"followed by this tier-calibrated assessment: {typology_rule}\n"
         "STRICT RULE: Provide factual observations and the typology assessment only. Do NOT "
         "mention any recommended action, debit freeze, restriction, monitoring, due diligence, "
         "or STR/FIU-IND filing—application policy appends the approved action separately.\n\n"
@@ -176,8 +207,10 @@ def _fallback_sar(analysis_payload: dict, graph_stats: dict) -> str:
     )
     typology_sentence, action_sentence = _tier_guidance(tier)
 
+    account_category = _account_category_label(account)
     paragraph_1 = (
-        f"Subject UPI account {account} has been assigned a Risk Score of "
+        f"Subject Bank Account {account} ({account_category}, reviewed under PMLA, 2002 "
+        f"and RBI KYC Master Directions) has been assigned a Risk Score of "
         f"{float(analysis_payload.get('risk_score', 0.0)):.2f}/100 ({tier} tier) by the "
         f"IsolationForest anomaly engine. During the 24-hour review window the account received "
         f"{format_inr(float(analysis_payload.get('total_inflow', 0.0)))} and remitted "

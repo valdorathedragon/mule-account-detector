@@ -1,4 +1,4 @@
-"""UPI Mule Account Anomaly & FIU-IND Compliance Workbench (single-page Streamlit dashboard).
+"""FINSIGHT: Mule Account Detection & FIU-IND Compliance Workbench (single-page Streamlit dashboard).
 
 Launch from the project root:  streamlit run ui/app.py
 """
@@ -35,16 +35,10 @@ BG, CARD = "#05060f", "#0b0d1e"
 CYAN, VIOLET, AMBER, RED = "#22d3ee", "#8b5cf6", "#f59e0b", "#ef4444"
 TEXT, MUTED, BORDER = "#e2e8f0", "#94a3b8", "#1e2140"
 TIER_COLOR = {"HIGH": RED, "MEDIUM": AMBER, "LOW": CYAN}
-
-DEFAULT_ACCOUNT = "mule_c1_hub01@ybl"
-PRESETS = [
-    ("mule_c1_hub01@ybl", "HIGH"),
-    ("employer_03@sbi", "MEDIUM"),
-    ("user_0130@okaxis", "LOW"),
-]
+LOGO_PATH = PROJECT_ROOT / "assets" / "finsight_logo.jpeg"
 
 st.set_page_config(
-    page_title="UPI Mule Account Workbench",
+    page_title="FINSIGHT: Mule Account Detection",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -93,6 +87,65 @@ def get_scored_df() -> pd.DataFrame:
 
 def get_accounts(df: pd.DataFrame) -> list[str]:
     return sorted(set(df["nameOrig"].astype(str)) | set(df["nameDest"].astype(str)))
+
+
+def get_dynamic_presets(df: pd.DataFrame) -> list[tuple[str, str]]:
+    """Select top real HIGH, MEDIUM, and LOW accounts from the scored IBM AML dataset."""
+    if df.empty or "Risk_Score" not in df.columns:
+        return []
+    orig_scores = df.groupby(df["nameOrig"].astype(str))["Risk_Score"].max()
+    dest_scores = df.groupby(df["nameDest"].astype(str))["Risk_Score"].max()
+    acct_scores = pd.concat([orig_scores, dest_scores.drop(labels=orig_scores.index, errors="ignore")])
+    both_sides = set(orig_scores.index) & set(dest_scores.index)
+    orig_counts = df["nameOrig"].astype(str).value_counts()
+
+    flagged_accts: set[str] = set()
+    if "Near_Limit_Velocity" in df.columns:
+        flagged_rows = df[df["Near_Limit_Velocity"] == 1]
+        flagged_accts = set(flagged_rows["nameOrig"].astype(str)) | set(
+            flagged_rows["nameDest"].astype(str)
+        )
+
+    presets: list[tuple[str, str]] = []
+    used: set[str] = set()
+
+    def _pick(cands: pd.Series, asc: bool, prefer_clean: bool = False, min_orig: int = 1) -> str | None:
+        if cands.empty:
+            return None
+        pool = cands[cands.index.isin(both_sides)]
+        if pool.empty:
+            pool = cands
+        if prefer_clean and flagged_accts:
+            clean = pool[~pool.index.isin(flagged_accts)]
+            if not clean.empty:
+                pool = clean
+        if min_orig > 1:
+            active = pool[pool.index.map(lambda a: orig_counts.get(a, 0) >= min_orig)]
+            if not active.empty:
+                pool = active
+        for acct in pool.sort_values(ascending=asc, kind="mergesort").index:
+            if str(acct) not in used:
+                return str(acct)
+        return None
+
+    high_acct = _pick(acct_scores[acct_scores >= 80.0], asc=False, min_orig=2)
+    if high_acct:
+        presets.append((high_acct, "HIGH"))
+        used.add(high_acct)
+
+    med_cands = acct_scores[(acct_scores >= 50.0) & (acct_scores < 80.0)]
+    med_mid = med_cands[med_cands <= 76.0]
+    med_acct = _pick(med_mid if not med_mid.empty else med_cands, asc=False, prefer_clean=True)
+    if med_acct:
+        presets.append((med_acct, "MEDIUM"))
+        used.add(med_acct)
+
+    low_acct = _pick(acct_scores[acct_scores < 50.0], asc=True, prefer_clean=True)
+    if low_acct:
+        presets.append((low_acct, "LOW"))
+        used.add(low_acct)
+
+    return presets
 
 
 def esc(value: object) -> str:
@@ -194,12 +247,24 @@ def run_analysis(account_id: str, df: pd.DataFrame, api_key_override: str | None
 
 
 # ---------------------------------------------------------------- header
-st.markdown(
-    '<h1 class="wb-title">UPI Mule Account Anomaly &amp; FIU-IND Compliance Workbench</h1>'
-    '<div class="wb-sub">IsolationForest risk scoring · 2-hop transaction topology · '
-    "RBI / FIU-IND Suspicious Activity Report synthesis</div>",
-    unsafe_allow_html=True,
-)
+if LOGO_PATH.exists():
+    head_logo, head_text = st.columns([1.15, 5.85])
+    with head_logo:
+        st.image(str(LOGO_PATH), width="stretch")
+    with head_text:
+        st.markdown(
+            '<h1 class="wb-title">FINSIGHT: Mule Account Detection</h1>'
+            '<div class="wb-sub">Real-Time Detection of Illicit Financial Flows, Rapid Layering, '
+            "and Post-KYC Mule Accounts Across Banking Networks</div>",
+            unsafe_allow_html=True,
+        )
+else:
+    st.markdown(
+        '<h1 class="wb-title">FINSIGHT: Mule Account Detection</h1>'
+        '<div class="wb-sub">Real-Time Detection of Illicit Financial Flows, Rapid Layering, '
+        "and Post-KYC Mule Accounts Across Banking Networks</div>",
+        unsafe_allow_html=True,
+    )
 
 try:
     scored_df = get_scored_df()
@@ -212,11 +277,15 @@ if not accounts:
     st.error("Scored dataset contains no accounts.")
     st.stop()
 
+presets = get_dynamic_presets(scored_df)
+default_account = presets[0][0] if presets else accounts[0]
 if st.session_state.get("account_select") not in accounts:
-    st.session_state["account_select"] = DEFAULT_ACCOUNT if DEFAULT_ACCOUNT in accounts else accounts[0]
+    st.session_state["account_select"] = default_account
 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), width="stretch")
     st.markdown(f'<div class="sec-title"><span>◆</span> Investigator Controls</div>', unsafe_allow_html=True)
 
     override_key = st.text_input(
@@ -231,7 +300,7 @@ with st.sidebar:
         st.caption("🟡 No Gemini key — deterministic template SAR will be used.")
 
     st.markdown("**Demo presets**")
-    for preset_id, tier in PRESETS:
+    for preset_id, tier in presets:
         if preset_id in accounts:
             st.button(
                 f"[{tier}] {preset_id}",
@@ -245,7 +314,7 @@ with st.sidebar:
         "Search account",
         options=accounts,
         key="account_select",
-        help=f"{len(accounts):,} unique accounts in data/scored_upi_data.csv",
+        help=f"{len(accounts):,} unique accounts in data/scored_bank_data.csv",
     )
     run_clicked = st.button("Run Forensic Analysis", type="primary", width="stretch")
 
