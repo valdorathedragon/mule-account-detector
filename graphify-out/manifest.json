@@ -12,9 +12,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795026170.886789,
-    "seen": 1795026187.5870335,
-    "ast_hash": "ece38aed9c61d9013584fe54823ebfda",
+    "mtime": 1795029570.69164,
+    "seen": 1795029625.9833212,
+    "ast_hash": "501feaaa65afa20cb7ba14c89603f6ec",
     "semantic_hash": ""
   },
   "docs/CHANGELOG.md": {
@@ -60,15 +60,15 @@
     "semantic_hash": ""
   },
   "assets/finsight_logo.jpeg": {
-    "mtime": 1795018826.0783677,
-    "seen": 1795025420.0161083,
-    "ast_hash": "7692e92730792c4810ef5be00822f11b",
+    "mtime": 1795026817.5233197,
+    "seen": 1795029625.9833276,
+    "ast_hash": "776914fce1b1857b7d3ee8e61a9268df",
     "semantic_hash": ""
   },
   "docs/FINSIGHT_v1_Changelog.pdf": {
-    "mtime": 1795024957.9942057,
-    "seen": 1795026187.587037,
-    "ast_hash": "ccc952a60001301703e7ec0fc3281dec",
+    "mtime": 1795029580.1180751,
+    "seen": 1795029625.9833255,
+    "ast_hash": "245184485ba41efff2a65a79ef714395",
     "semantic_hash": ""
   }
 }

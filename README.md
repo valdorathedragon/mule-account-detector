@@ -146,6 +146,7 @@ All source modules (`src/`, `ui/`) have been audited and hardened:
 - **Semgrep**: Scanned with `auto` security rules across `src/` and `ui/` — zero findings.
 - **Snyk Code & SCA**: Validated Python code and dependency graph — zero vulnerabilities.
 - **CWE-668 / CWE-79 Mitigations**: Session-isolated API key overrides (no process-wide `os.environ` pollution) and HTML-escaped node tooltips in PyVis graphs.
+- **Release & Architecture Changelog**: Full phase-by-phase build history and technical specifications are available in [docs/FINSIGHT_v1_Changelog.pdf](docs/FINSIGHT_v1_Changelog.pdf) and [docs/CHANGELOG.md](docs/CHANGELOG.md).
 
 ---
 
