@@ -284,9 +284,10 @@ def _build_top_drivers(
     return drivers[:MAX_DRIVERS]
 
 
-def analyze_account(account_id: str) -> dict:
+def analyze_account(account_id: str, df: pd.DataFrame | None = None) -> dict:
     """Return the strict account risk contract for downstream UI, graph and SAR modules."""
-    df = load_scored_data()
+    if df is None:
+        df = load_scored_data()
     outgoing = df[df["nameOrig"] == account_id]
     incoming = df[df["nameDest"] == account_id]
     if outgoing.empty and incoming.empty:
@@ -337,7 +338,7 @@ def main() -> None:
         else (str(df.loc[df["Risk_Score"].idxmax(), "nameOrig"]) if not df.empty else None)
     )
     if demo_account:
-        sample = analyze_account(demo_account)
+        sample = analyze_account(demo_account, df=df)
         print(f"Sample analyze_account: { {k: v for k, v in sample.items() if k != 'counterparties'} }")
 
 

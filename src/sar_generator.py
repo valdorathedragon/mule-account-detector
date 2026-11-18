@@ -218,10 +218,14 @@ def _is_complete_two_paragraph_sar(response: object, text: str, types_mod: objec
     return True
 
 
-def generate_rbi_sar(analysis_payload: dict, graph_stats: dict) -> str:
+def generate_rbi_sar(
+    analysis_payload: dict, graph_stats: dict, api_key: str | None = None
+) -> str:
     """Generate a 2-paragraph SAR with Gemini; fall back to a deterministic template on any failure."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
+    resolved_key = (api_key.strip() if api_key and api_key.strip() else None) or os.environ.get(
+        "GEMINI_API_KEY"
+    )
+    if not resolved_key:
         return _fallback_sar(analysis_payload, graph_stats)
 
     try:
@@ -239,7 +243,7 @@ def generate_rbi_sar(analysis_payload: dict, graph_stats: dict) -> str:
             except Exception:
                 pass
 
-        with genai.Client(api_key=api_key) as client:
+        with genai.Client(api_key=resolved_key) as client:
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=_build_prompt(analysis_payload, graph_stats),

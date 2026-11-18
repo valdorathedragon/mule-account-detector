@@ -2,6 +2,34 @@
 
 All notable step-by-step architectural, backend, ML pipeline, UI, and documentation changes to this project will be documented in this file for inclusion in the final PDF report.
 
+## Phase 4: Single-Page Streamlit Investigator Dashboard
+
+**Version:** `[0.4.0] - 2026-11-18`
+
+### Added
+- `ui/app.py` — single-page investigator workbench titled *UPI Mule Account Anomaly & FIU-IND Compliance Workbench*, launched with `streamlit run ui/app.py` from the project root.
+- `.streamlit/config.toml` — native dark theme (`#05060f` background, `#0b0d1e` secondary, `#22d3ee` primary) so Streamlit-rendered widgets (dataframe, inputs) match the custom CSS.
+- `python-dotenv` added to `requirements.txt`.
+
+### UI Architecture
+- **Backend contract** (confirmed against the refreshed graphify graph): `analyze_account(account_id) -> dict` (`account_id, risk_score, risk_tier, total_inflow, total_outflow, pass_through_ratio, top_drivers, counterparties`); `build_account_subgraph(account_id, df) -> dict` (`in_degree, out_degree, degree_asymmetry, topology, high_risk_node_count, high_risk_nodes, output_path, …`); `generate_rbi_sar(payload, graph_stats) -> str`; `format_inr()` for Indian digit grouping.
+- **Path resolution:** `ui/app.py` inserts the project root (and `src/`) onto `sys.path` from `Path(__file__).resolve().parents[1]`, so imports work regardless of launch directory.
+- **Palette:** background `#05060f`, cards `#0b0d1e`, cyan `#22d3ee`, violet `#8b5cf6`, amber `#f59e0b`, high-risk red `#ef4444`; tier badges map HIGH→red, MEDIUM→amber, LOW→cyan.
+- **Layout:** Row 1 four KPI cards (Risk Score + tier badge, 24h inflow, 24h outflow in `INR XX,XX,XXX.XX`, Pass-Through Ratio %); Row 2 split `1.2 : 1` (network | drivers + SAR); Row 3 account ledger (`txn_id, timestamp, nameOrig, nameDest, amount, Pass_Through_Ratio, Risk_Score`).
+- **Safety:** every dynamic string rendered through `unsafe_allow_html` is passed through `html.escape()`; analysis results are cached in `st.session_state` so widget reruns do not regenerate the SAR.
+
+### Sidebar Controls & Demo Presets
+- `.env` is loaded with `python-dotenv` (`override=False`) so `GEMINI_API_KEY` is picked up automatically; an optional password-masked *Gemini API Key (Optional Override)* input is scoped strictly to the investigator's Streamlit session (`api_key` parameter on `generate_rbi_sar()`) rather than mutating process-wide `os.environ["GEMINI_API_KEY"]` (CWE-668 mitigation).
+- Preset buttons: `mule_c1_hub01@ybl` **[HIGH]**, `employer_03@sbi` **[MEDIUM]** (risk score 70.45), `user_0130@okaxis` **[LOW]**; plus a searchable selector over all unique accounts in `data/scored_upi_data.csv`.
+- *Run Forensic Analysis* triggers analysis; the first page load auto-runs `mule_c1_hub01@ybl`. Presets select and run in one click; changing the selector alone prompts the user to press Run.
+
+### PyVis HTML Embedding & Session Isolation
+- Each forensic run passes a unique per-run temporary file (`data/.network_*.html`, cleaned up in `finally:`) to `build_account_subgraph()`, fits the PyVis canvas (`430px`) into the `460px` iframe (`streamlit.components.v1.html(..., height=460, scrolling=False)`), and binds `analyze_account(account_id, df=df)`, graph extraction, and the ledger table to the same scored DataFrame snapshot.
+- Compact metrics below the graph show Role, In-Degree, Out-Degree, Degree Asymmetry and connected high-risk neighbours (focal account excluded). HTML read failures preserve computed `graph_stats`, while graph build failures suppress SAR synthesis/download so missing topology is never reported as zero activity.
+
+### SAR Export Workflow
+- The two-paragraph report from `generate_rbi_sar()` renders inside a compliance card (paragraphs HTML-escaped) and is exported via `st.download_button` as `SAR_<account_id>.txt` (filename sanitised to `[A-Za-z0-9._@-]`). Without a Gemini key, or on any API failure, the deterministic tier-calibrated fallback is shown and exported.
+
 ## Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis
 
 **Version:** `[0.3.0] - 2026-11-18`
