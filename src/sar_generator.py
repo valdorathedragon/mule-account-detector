@@ -17,6 +17,9 @@ _EXCLUDED_GRAPH_KEYS = (
     "rendered_nodes",
     "rendered_edges",
     "pruned",
+    "layout_mode",
+    "sankey_data",
+    "timeline_data",
 )
 
 

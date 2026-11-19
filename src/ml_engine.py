@@ -8,10 +8,8 @@ import json
 import os
 from pathlib import Path
 import tempfile
-import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import IsolationForest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FEATURES_PATH = PROJECT_ROOT / "data" / "bank_mule_features.csv"
@@ -138,6 +136,9 @@ def train_and_score(
     model_path: Path = MODEL_PATH,
 ) -> pd.DataFrame:
     """Train IsolationForest, stage immutable generation artifacts, and publish atomically."""
+    import joblib
+    from sklearn.ensemble import IsolationForest
+
     global _SCORED_CACHE
     model_path.parent.mkdir(parents=True, exist_ok=True)
     scored_path.parent.mkdir(parents=True, exist_ok=True)

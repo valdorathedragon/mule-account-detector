@@ -1,17 +1,17 @@
 # Graph Report - Mule account prototype ver 1(test case)  (2026-11-20)
 
 ## Corpus Check
-- 9 files · ~18,413 words
+- 10 files · ~18,989 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 4 file(s) not represented in the graph (top: (none) 2, .toml 1, .conf 1)
 
 ## Summary
-- 309 nodes · 609 edges · 17 communities (13 shown, 4 thin omitted)
-- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 38 edges (avg confidence: 0.91)
+- 316 nodes · 618 edges · 18 communities (14 shown, 4 thin omitted)
+- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 39 edges (avg confidence: 0.91)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `8e3bb981`
+- Built from commit: `802661b8`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -30,6 +30,7 @@
 - inject_custom_css
 - render_sidebar
 - gzip_proxy.py
+- FINSIGHT: Mule Account Detection
 
 ## God Nodes (most connected - your core abstractions)
 1. `main()` - 23 edges
@@ -37,36 +38,36 @@
 3. `generate_rbi_sar()` - 16 edges
 4. `_render_sar_panel_fragment()` - 15 edges
 5. `analyze_account()` - 15 edges
-6. `build_account_subgraph()` - 14 edges
-7. `render_graph_topology()` - 14 edges
-8. `train_and_score()` - 14 edges
+6. `train_and_score()` - 14 edges
+7. `build_account_subgraph()` - 14 edges
+8. `render_graph_topology()` - 14 edges
 9. `CodeRabbit Audit & Hardening` - 14 edges
 10. `render_settings()` - 13 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `Changed & Optimized` --references--> `inject_custom_css()`  [INFERRED]
+  CHANGELOG.md → ui/app.py
 - `PyVis HTML Embedding & Session Isolation` --references--> `build_account_subgraph()`  [INFERRED]
   docs/CHANGELOG.md → src/graph_engine.py
 - `Backend, SAR & UI Updates` --references--> `get_dynamic_presets()`  [INFERRED]
   docs/CHANGELOG.md → ui/app.py
 - ``analyze_account()` Data Contract` --references--> `analyze_account()`  [INFERRED]
   docs/CHANGELOG.md → src/ml_engine.py
-- `CodeRabbit Audit & Hardening` --references--> `_high_risk_accounts()`  [INFERRED]
-  docs/CHANGELOG.md → src/graph_engine.py
-- `Added` --references--> `build_account_subgraph()`  [INFERRED]
-  docs/CHANGELOG.md → src/graph_engine.py
+- `CodeRabbit Audit & Hardening` --references--> `_build_prompt()`  [INFERRED]
+  docs/CHANGELOG.md → src/sar_generator.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (17 total, 4 thin omitted)
+## Communities (18 total, 4 thin omitted)
 
 ### Community 0 - "data_pipeline.py"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (10): build_bank_dataset(), _calibrate_hub_placements(), _convert_amounts_to_inr(), engineer_features(), _keep_outside_structuring(), main(), _map_indian_bank_accounts(), _map_timestamps_to_window() (+2 more)
 
 ### Community 2 - "Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis"
-Cohesion: 0.06
-Nodes (29): [0.1.0] - 2026-11-18 - Project Initialization & Scaffolding, [0.2.0] - 2026-11-18 - Phase 2: Data Engineering & Feature Pipeline, Added, Added, Added, `analyze_account()` Data Contract, Backend, SAR & UI Updates, Changelog - FINSIGHT: Mule Account Detection (+21 more)
+Cohesion: 0.12
+Nodes (17): [0.1.0] - 2026-11-18 - Project Initialization & Scaffolding, [0.2.0] - 2026-11-18 - Phase 2: Data Engineering & Feature Pipeline, Added, Added, Added, `analyze_account()` Data Contract, Backend, SAR & UI Updates, Changelog - FINSIGHT: Mule Account Detection (+9 more)
 
 ### Community 3 - "render_account_forensics"
 Cohesion: 0.18
@@ -101,7 +102,7 @@ Cohesion: 0.18
 Nodes (6): get_scored_mtime(), _apply_pending_state(), _init_session_state(), main(), render_sar_workbench(), _sync_selected_account()
 
 ### Community 12 - "app.py"
-Cohesion: 0.15
+Cohesion: 0.17
 Nodes (9): _active_api_key(), gemini_status_badge_html(), _on_currency_change(), _on_dark_mode_change(), _on_max_nodes_change(), _on_motion_change(), _on_physics_change(), _on_sar_mode_change() (+1 more)
 
 ### Community 14 - "render_sidebar"
@@ -112,23 +113,27 @@ Nodes (4): load_logo_data_uri(), _on_sidebar_nav_change(), render_sidebar(), _se
 Cohesion: 0.08
 Nodes (5): create_proxy_app(), proxy_http(), proxy_ws(), _rewrite_bundled_css(), _upstream_ws_url()
 
+### Community 17 - "FINSIGHT: Mule Account Detection"
+Cohesion: 0.10
+Nodes (18): [2026-11-20], Added, Changed & Optimized, Changelog, Fixed, 1. Clone & Set Up Virtual Environment, 2. Install Dependencies, 3. Run Data & Machine Learning Pipelines (+10 more)
+
 ## Knowledge Gaps
 - **4 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Changelog - FINSIGHT: Mule Account Detection` connect `Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis` to `generate_rbi_sar`?**
+- **Why does `Changelog - FINSIGHT: Mule Account Detection` connect `Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis` to `FINSIGHT: Mule Account Detection`, `generate_rbi_sar`?**
   _High betweenness centrality (0.123) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `generate_rbi_sar()` (e.g. with `Added` and `SAR Export Workflow`) actually correct?**
   _`generate_rbi_sar()` has 4 INFERRED edges - model-reasoned connections that need verification._
 - **Should `data_pipeline.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.13054187192118227 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.12413793103448276 - nodes in this community are weakly interconnected._
 - **Why does `Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis` connect `Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis` to `ml_engine.py`?**
   _High betweenness centrality (0.107) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `analyze_account()` (e.g. with `Added` and ``analyze_account()` Data Contract`) actually correct?**
   _`analyze_account()` has 4 INFERRED edges - model-reasoned connections that need verification._
 - **Should `Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis` be split into smaller, more focused modules?**
-  _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.11764705882352941 - nodes in this community are weakly interconnected._
 - **Why does `build_account_subgraph()` connect `graph_engine.py` to `Phase 3: ML Anomaly Scoring, Graph Topology & SAR Synthesis`, `generate_rbi_sar`, `app.py`, `Any`?**
-  _High betweenness centrality (0.091) - this node is a cross-community bridge._
+  _High betweenness centrality (0.090) - this node is a cross-community bridge._

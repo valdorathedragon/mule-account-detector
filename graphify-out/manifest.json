@@ -12,9 +12,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795029570.69164,
-    "seen": 1795029625.9833212,
-    "ast_hash": "501feaaa65afa20cb7ba14c89603f6ec",
+    "mtime": 1795120798.3237085,
+    "seen": 1795120834.1954596,
+    "ast_hash": "bac6ef01fb59417988b2d27dd2cdda99",
     "semantic_hash": ""
   },
   "docs/CHANGELOG.md": {
@@ -75,6 +75,12 @@
     "mtime": 1795116268.4069521,
     "seen": 1795116315.3734012,
     "ast_hash": "7a79ea8e3da55c090d86a227f7e41f88",
+    "semantic_hash": ""
+  },
+  "CHANGELOG.md": {
+    "mtime": 1795120764.2993505,
+    "seen": 1795120834.195456,
+    "ast_hash": "bdc36730715b80ffc31ff9b14f6b4aec",
     "semantic_hash": ""
   }
 }
