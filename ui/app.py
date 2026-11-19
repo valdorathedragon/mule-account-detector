@@ -4,28 +4,29 @@ Launch from the project root:  streamlit run ui/app.py
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import html
 import os
 from pathlib import Path
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
 import numpy as np
 import pandas as pd
 import streamlit as st
-from streamlit_option_menu import option_menu
+
+if TYPE_CHECKING:
+    import plotly.graph_objects as go
 
 # Ensure project root is on sys.path so `src.*` imports resolve reliably
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.graph_engine import build_account_subgraph
 from src.ml_engine import analyze_account, assign_risk_tier, get_scored_mtime, load_scored_data
 from src.sar_generator import MODEL_NAME as GEMINI_MODEL_NAME
-from src.sar_generator import generate_rbi_sar
 
 LOGO_PATH = PROJECT_ROOT / "assets" / "finsight_logo.jpeg"
 NAV_OPTIONS = [
@@ -35,7 +36,6 @@ NAV_OPTIONS = [
     "FIU-IND STR/SAR",
     "Settings",
 ]
-NAV_ICONS = ["speedometer2", "search", "diagram-3", "file-earmark-text", "gear"]
 CURRENCY_LABELS = {
     "compact": "Compact Lakhs/Crores (₹12.40 L)",
     "exact": "Exact INR Grouping (₹12,40,000.00)",
@@ -44,20 +44,28 @@ SAR_MODE_LABELS = {
     True: "Auto-Generate on Tab Open",
     False: "Manual Click Only",
 }
+MOTION_MODE_LABELS = {
+    True: "Full Motion (Idle + Reactive)",
+    False: "Reduced Motion",
+}
+GRAPH_LAYOUT_LABELS = {
+    "force": "Force-Directed Cluster",
+    "hierarchical": "Hierarchical Flow (L→R)",
+}
+TIER_CHART_COLORS = {
+    "HIGH": "#EF4444",
+    "MEDIUM": "#F59E0B",
+    "LOW": "#98E6C3",
+    "FOCAL": "#4F46E5",
+}
 HIGH_RISK_THRESHOLD = 80.0
 MEDIUM_RISK_THRESHOLD = 50.0
 MAX_HIGH_RISK_BADGES = 30
+PRIORITY_SELECTOR_LIMIT = 250
 _KPI_ACCENTS = {"#0047AB", "#4F46E5", "#6D28D9", "#98E6C3"}
+_KPI_DELAYS = {0, 50, 100, 150}
 _SECTION_ACCENTS = {"#0047AB", "#4F46E5", "#6D28D9"}
 _ALLOWED_SPACER_HEIGHTS = {"0.5rem", "0.75rem", "1rem", "1.25rem"}
-_PALETTE_SWATCHES = (
-    ("Navy Blue", "#0A1931"),
-    ("Blue", "#0047AB"),
-    ("Blue-Violet", "#4F46E5"),
-    ("Violet", "#6D28D9"),
-    ("Mint Green", "#98E6C3"),
-    ("White", "#FFFFFF"),
-)
 
 st.set_page_config(
     page_title="FINSIGHT | Mule Account Detection",
@@ -76,20 +84,26 @@ def _palette(dark_mode: bool) -> dict[str, str]:
         return {
             "canvas": "#0A1931",
             "surface": "#0E2240",
-            "sidebar_bg": "#060D1F",
+            "sidebar_bg": "#071226",
             "logo_frame_bg": "transparent",
             "logo_frame_pad": "0px",
             "text": "#FFFFFF",
             "muted": "#CBD5E1",
-            "border": "rgba(79, 70, 229, 0.35)",
+            "border": "1px solid rgba(152, 230, 195, 0.22)",
+            "border_color": "rgba(152, 230, 195, 0.22)",
+            "sidebar_border": "1px solid rgba(152, 230, 195, 0.22)",
+            "specular_top": "rgba(152, 230, 195, 0.22)",
+            "elevation_shadow": "0 12px 32px -6px rgba(0, 0, 0, 0.62), 0 4px 14px -2px rgba(79, 70, 229, 0.22)",
+            "hover_shadow": "0 16px 36px -6px rgba(0, 0, 0, 0.72), 0 0 18px rgba(79, 70, 229, 0.42)",
             "kpi_bg": "#0E2240",
-            "kpi_border": "rgba(79, 70, 229, 0.35)",
-            "kpi_shadow": "0 4px 16px rgba(6, 13, 31, 0.35)",
+            "kpi_border": "1px solid rgba(152, 230, 195, 0.22)",
+            "kpi_shadow": "0 12px 32px -6px rgba(0, 0, 0, 0.62), 0 4px 14px -2px rgba(79, 70, 229, 0.22)",
             "input_bg": "#0E2240",
             "input_border": "rgba(79, 70, 229, 0.45)",
-            "low_bg": "rgba(152, 230, 195, 0.16)",
-            "low_fg": "#98E6C3",
-            "low_border": "rgba(152, 230, 195, 0.55)",
+            "primary_btn_border": "1px solid #4F46E5",
+            "low_bg": "#98E6C3",
+            "low_fg": "#0A1931",
+            "low_border": "#0A1931",
             "med_bg": "rgba(245, 158, 11, 0.18)",
             "med_fg": "#FBBF24",
             "med_border": "rgba(245, 158, 11, 0.50)",
@@ -100,73 +114,413 @@ def _palette(dark_mode: bool) -> dict[str, str]:
             "offline_fg": "#E9D5FF",
             "offline_border": "rgba(109, 40, 217, 0.55)",
             "sar_bg": "#0E2240",
-            "sar_border": "rgba(109, 40, 217, 0.45)",
+            "sar_border": "1px solid rgba(152, 230, 195, 0.22)",
             "nav_icon": "#98E6C3",
             "nav_text": "#FFFFFF",
             "menu_title": "#98E6C3",
+            "scroll_track": "#071226",
+            "header_bg": "rgba(10, 25, 49, 0.95)",
+            "listbox_hover": "#142B54",
+            "toggle_off_bg": "rgba(255, 255, 255, 0.18)",
+            "toggle_off_border": "rgba(79, 70, 229, 0.45)",
+            "gdg_vars": (
+                "--gdg-bg-cell: #0E2240; "
+                "--gdg-bg-cell-medium: #0A1931; "
+                "--gdg-bg-header: #071226; "
+                "--gdg-bg-header-has-focus: #142B54; "
+                "--gdg-text-dark: #FFFFFF; "
+                "--gdg-text-medium: #CBD5E1; "
+                "--gdg-text-header: #FFFFFF; "
+                "--gdg-border-color: rgba(152, 230, 195, 0.22);"
+            ),
+            "orb_opacity": "0.16",
+            "card_hover_top": "#98E6C3",
+            "sheen_grad": "linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(152,230,195,0.14) 48%, rgba(255,255,255,0) 100%)",
+            "nav_card_bg": "#0E2240",
+            "nav_card_border": "1px solid rgba(152, 230, 195, 0.22)",
+            "nav_card_shadow": "0 8px 24px rgba(6, 13, 31, 0.45)",
+            "nav_title_border": "1px solid rgba(152, 230, 195, 0.22)",
+            "nav_pill_hover": "#142B54",
+            "nav_active_border": "1px solid #4F46E5",
+            "nav_active_shadow": "0 4px 12px rgba(0, 71, 171, 0.35)",
+            "table_header_bg": "#071226",
+            "table_row_bg": "#0E2240",
+            "table_row_alt_bg": "#0A1931",
+            "table_border": "rgba(152, 230, 195, 0.22)",
         }
     return {
-        "canvas": "#FFFFFF",
-        "surface": "#F4F7FB",
-        "sidebar_bg": "#F4F7FB",
+        "canvas": "#F6F8FC",
+        "surface": "#FFFFFF",
+        "sidebar_bg": "#FFFFFF",
         "logo_frame_bg": "#060D1F",
         "logo_frame_pad": "6px",
         "text": "#0A1931",
         "muted": "#334155",
-        "border": "#E2E8F0",
+        "border": "1.5px solid #0A1931",
+        "border_color": "#0A1931",
+        "sidebar_border": "1.5px solid #0A1931",
+        "specular_top": "#0A1931",
+        "elevation_shadow": "0 3px 0 rgba(10, 25, 49, 0.12), 0 8px 20px rgba(10, 25, 49, 0.06)",
+        "hover_shadow": "0 5px 0 rgba(10, 25, 49, 0.16), 0 12px 26px rgba(10, 25, 49, 0.12)",
         "kpi_bg": "#FFFFFF",
-        "kpi_border": "#E2E8F0",
-        "kpi_shadow": "0 1px 4px rgba(10, 25, 49, 0.06)",
+        "kpi_border": "1.5px solid #0A1931",
+        "kpi_shadow": "0 3px 0 rgba(10, 25, 49, 0.12), 0 8px 20px rgba(10, 25, 49, 0.06)",
         "input_bg": "#FFFFFF",
-        "input_border": "#CBD5E1",
-        "low_bg": "rgba(152, 230, 195, 0.45)",
+        "input_border": "rgba(10, 25, 49, 0.75)",
+        "primary_btn_border": "1.5px solid #0A1931",
+        "low_bg": "#98E6C3",
         "low_fg": "#0A1931",
-        "low_border": "#0047AB",
+        "low_border": "#0A1931",
         "med_bg": "rgba(245, 158, 11, 0.18)",
         "med_fg": "#92400E",
-        "med_border": "rgba(217, 119, 6, 0.48)",
+        "med_border": "rgba(217, 119, 6, 0.65)",
         "high_bg": "rgba(239, 68, 68, 0.14)",
         "high_fg": "#B91C1C",
-        "high_border": "rgba(220, 38, 38, 0.48)",
+        "high_border": "rgba(220, 38, 38, 0.65)",
         "offline_bg": "rgba(109, 40, 217, 0.12)",
         "offline_fg": "#6D28D9",
-        "offline_border": "rgba(109, 40, 217, 0.42)",
-        "sar_bg": "#F4F7FB",
-        "sar_border": "rgba(109, 40, 217, 0.32)",
+        "offline_border": "#6D28D9",
+        "sar_bg": "#FFFFFF",
+        "sar_border": "1.5px solid #0A1931",
         "nav_icon": "#0047AB",
         "nav_text": "#0A1931",
-        "menu_title": "#0047AB",
+        "menu_title": "#0A1931",
+        "scroll_track": "#F6F8FC",
+        "header_bg": "rgba(246, 248, 252, 0.96)",
+        "listbox_hover": "#F1F5F9",
+        "toggle_off_bg": "#E2E8F0",
+        "toggle_off_border": "rgba(10, 25, 49, 0.55)",
+        "gdg_vars": (
+            "--gdg-bg-cell: #FFFFFF; "
+            "--gdg-bg-cell-medium: #F1F5F9; "
+            "--gdg-bg-header: #0A1931; "
+            "--gdg-bg-header-has-focus: #142B54; "
+            "--gdg-text-dark: #0A1931; "
+            "--gdg-text-medium: #334155; "
+            "--gdg-text-header: #FFFFFF; "
+            "--gdg-border-color: rgba(10, 25, 49, 0.22);"
+        ),
+        "orb_opacity": "0.07",
+        "card_hover_top": "#4F46E5",
+        "sheen_grad": "linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(79,70,229,0.10) 48%, rgba(255,255,255,0) 100%)",
+        "nav_card_bg": "#FFFFFF",
+        "nav_card_border": "1.5px solid #0A1931",
+        "nav_card_shadow": "0 3px 0 rgba(10, 25, 49, 0.12), 0 8px 20px rgba(10, 25, 49, 0.06)",
+        "nav_title_border": "1.5px solid rgba(10, 25, 49, 0.22)",
+        "nav_pill_hover": "#F1F5F9",
+        "nav_active_border": "1.5px solid #0A1931",
+        "nav_active_shadow": "0 3px 0 rgba(10, 25, 49, 0.18), 0 4px 12px rgba(0, 71, 171, 0.25)",
+        "table_header_bg": "#0A1931",
+        "table_row_bg": "#FFFFFF",
+        "table_row_alt_bg": "#F1F5F9",
+        "table_border": "rgba(10, 25, 49, 0.22)",
     }
 
 
-def inject_custom_css(dark_mode: bool) -> None:
-    """Inject FINSIGHT 6-color Dark/Light theme CSS across canvas, sidebar, and widgets."""
+def inject_custom_css(dark_mode: bool, full_motion: bool = True) -> None:
+    """Inject FINSIGHT 6-color Dark/Light theme CSS and ambient mesh in separate blocks."""
     p = _palette(dark_mode)
-    st.markdown(
-        f"""
-        <style>
-        .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{
+    reduced_motion_override = (
+        """
+        .finsight-ambient-mesh,
+        .finsight-banner::after,
+        .live-beacon::after,
+        .finsight-kpi-card::before,
+        .sar-paper::before {
+            display: none !important;
+            animation: none !important;
+        }
+        *, *::before, *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+        }
+        """
+        if not full_motion
+        else ""
+    ).strip()
+    css_markup = f"""<style>
+        @keyframes ambientFloat {{
+            0% {{
+                transform: translate3d(0px, 0px, 0) scale(1);
+            }}
+            50% {{
+                transform: translate3d(28px, -22px, 0) scale(1.06);
+            }}
+            100% {{
+                transform: translate3d(-20px, 18px, 0) scale(0.96);
+            }}
+        }}
+        @keyframes bannerSheen {{
+            0%, 15% {{
+                transform: translateX(-120%) skewX(-20deg);
+                opacity: 0;
+            }}
+            35% {{
+                opacity: 1;
+            }}
+            65%, 100% {{
+                transform: translateX(260%) skewX(-20deg);
+                opacity: 0;
+            }}
+        }}
+        @keyframes livePulse {{
+            0% {{
+                transform: scale(1);
+                opacity: 0.85;
+            }}
+            75%, 100% {{
+                transform: scale(2.2);
+                opacity: 0;
+            }}
+        }}
+        @keyframes logoGlow {{
+            0% {{
+                filter: drop-shadow(0 0 4px rgba(0, 71, 171, 0.25));
+                opacity: 0.96;
+            }}
+            100% {{
+                filter: drop-shadow(0 0 12px rgba(152, 230, 195, 0.42));
+                opacity: 1;
+            }}
+        }}
+        @font-face {{
+            font-family: "Source Sans";
+            font-display: swap;
+        }}
+        @font-face {{
+            font-family: "Source Code Pro";
+            font-display: swap;
+        }}
+        html, body, .stApp {{
+            font-display: swap;
+        }}
+        @keyframes cardReveal {{
+            from {{
+                opacity: 0;
+            }}
+            to {{
+                opacity: 1;
+            }}
+        }}
+        @keyframes fadeSlideUp {{
+            from {{
+                opacity: 0;
+            }}
+            to {{
+                opacity: 1;
+            }}
+        }}
+        @keyframes pulseAlert {{
+            0%, 100% {{
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.32), inset 0 0 8px rgba(239, 68, 68, 0.18);
+            }}
+            50% {{
+                box-shadow: 0 0 12px 2px rgba(239, 68, 68, 0.45), inset 0 0 12px rgba(239, 68, 68, 0.28);
+            }}
+        }}
+        ::-webkit-scrollbar {{
+            width: 8px;
+            height: 8px;
+        }}
+        ::-webkit-scrollbar-track {{
+            background: {p["scroll_track"]};
+        }}
+        ::-webkit-scrollbar-thumb {{
+            background: linear-gradient(180deg, #0047AB 0%, #4F46E5 100%);
+            border-radius: 9999px;
+        }}
+        ::-webkit-scrollbar-thumb:hover {{
+            background: #6D28D9;
+        }}
+        .stApp, body, p, div, span:not([data-testid="stIconMaterial"]):not(.material-symbols-rounded), h1, h2, h3, button:not([data-testid="stIconMaterial"]), input {{
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+        }}
+        [data-testid="stIconMaterial"],
+        span[data-testid="stIconMaterial"] {{
+            font-family: "Material Symbols Rounded" !important;
+            font-feature-settings: "liga" 1 !important;
+            -webkit-font-feature-settings: "liga" 1 !important;
+        }}
+        code, pre, kbd, samp, .stCode {{
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+        }}
+        .finsight-mono {{
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+            font-variant-numeric: tabular-nums;
+            font-size: 0.86em;
+            background-color: rgba(79, 70, 229, 0.14);
+            padding: 0.1rem 0.34rem;
+            border-radius: 5px;
+        }}
+        .stApp, [data-testid="stAppViewContainer"] {{
             background-color: {p["canvas"]};
             color: {p["text"]};
+        }}
+        html, body, .stApp, [data-testid="stAppViewContainer"], section[data-testid="stMain"] {{
+            overflow-y: auto !important;
+            height: auto !important;
+            min-height: 100vh;
+        }}
+        header[data-testid="stHeader"] {{
+            background: transparent !important;
+        }}
+        header[data-testid="stHeader"] button,
+        header[data-testid="stHeader"] svg {{
+            color: {p["text"]} !important;
+            fill: {p["text"]} !important;
+        }}
+        [data-testid="stAppViewContainer"] > .main {{
+            position: relative;
+            z-index: 1;
+        }}
+        .finsight-ambient-mesh {{
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }}
+        .finsight-ambient-mesh .ambient-orb {{
+            position: absolute;
+            border-radius: 9999px;
+            filter: blur(72px);
+            opacity: {p["orb_opacity"]};
+            pointer-events: none;
+            will-change: transform;
+            animation: ambientFloat 14s ease-in-out 1.5s infinite alternate;
+        }}
+        .finsight-ambient-mesh .orb-blue {{
+            width: 420px;
+            height: 420px;
+            top: 6%;
+            left: 18%;
+            background: radial-gradient(circle, #0047AB 0%, rgba(79, 70, 229, 0) 72%);
+        }}
+        .finsight-ambient-mesh .orb-violet {{
+            width: 460px;
+            height: 460px;
+            bottom: 4%;
+            right: 8%;
+            background: radial-gradient(circle, #6D28D9 0%, rgba(109, 40, 217, 0) 72%);
+            animation-delay: 1.5s;
         }}
         [data-testid="stSidebar"], [data-testid="stSidebarContent"] {{
             background-color: {p["sidebar_bg"]} !important;
             color: {p["text"]};
         }}
         [data-testid="stSidebar"] {{
-            border-right: 1px solid {p["border"]};
+            border-right: {p["sidebar_border"]} !important;
         }}
-        [data-testid="stSidebar"] [data-testid="stImage"] {{
+        .finsight-sidebar-logo {{
             background-color: {p["logo_frame_bg"]};
             padding: {p["logo_frame_pad"]};
             border-radius: 10px;
-            border: none;
-            box-shadow: none;
+            margin-bottom: 0.35rem;
+            min-height: 92px;
+            box-sizing: border-box;
+            will-change: filter, opacity;
+            animation: logoGlow 5s ease-in-out 1.5s infinite alternate;
         }}
-        [data-testid="stSidebar"] [data-testid="stImage"] img {{
+        .finsight-sidebar-logo img {{
+            width: 100%;
+            max-width: 170px;
+            height: auto;
+            aspect-ratio: 170 / 92;
+            object-fit: contain;
             border-radius: 8px;
             display: block;
+            margin: 0 auto;
         }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] {{
+            background-color: {p["nav_card_bg"]};
+            border: {p["nav_card_border"]};
+            border-radius: 12px;
+            padding: 0.65rem 0.65rem 0.55rem 0.65rem;
+            box-shadow: {p["nav_card_shadow"]};
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [data-testid="stWidgetLabel"] {{
+            border-bottom: {p["nav_title_border"]};
+            padding-bottom: 0.45rem;
+            margin-bottom: 0.45rem;
+            width: 100%;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] [data-testid="stWidgetLabel"] p {{
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.08em !important;
+            text-transform: uppercase !important;
+            color: {p["menu_title"]} !important;
+            margin: 0 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] {{
+            gap: 4px !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label {{
+            width: 100%;
+            margin: 2px 0 !important;
+            padding: 0.55rem 0.75rem !important;
+            border-radius: 8px !important;
+            border: 1px solid transparent;
+            background-color: transparent;
+            color: {p["nav_text"]} !important;
+            cursor: pointer;
+            transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label > div:first-child {{
+            display: none !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label p {{
+            font-size: 14px !important;
+            font-weight: 500 !important;
+            color: {p["nav_text"]} !important;
+            margin: 0 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:hover {{
+            background-color: {p["nav_pill_hover"]} !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {{
+            background-color: #0047AB !important;
+            color: #FFFFFF !important;
+            border: {p["nav_active_border"]} !important;
+            font-weight: 600 !important;
+            box-shadow: {p["nav_active_shadow"]} !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) *,
+        [data-testid="stSidebar"] [data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) p {{
+            color: #FFFFFF !important;
+            font-weight: 600 !important;
+        }}
+        .live-beacon {{
+            display: inline-block;
+            position: relative;
+            width: 8px;
+            height: 8px;
+            border-radius: 9999px;
+            background-color: #98E6C3;
+            margin-right: 0.45rem;
+            vertical-align: middle;
+            pointer-events: none;
+        }}
+        .live-beacon::after {{
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 9999px;
+            background-color: #98E6C3;
+            pointer-events: none;
+            will-change: transform, opacity;
+            animation: livePulse 2.2s ease-out 1.5s infinite;
+        }}
+        .telemetry-header {{
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.35rem;
+            font-size: 0.92rem;
+            color: {p["text"]};
+        }}
+        [data-testid="stWidgetLabel"] p,
+        [data-testid="stWidgetLabel"] span,
         [data-testid="stSidebar"] p,
         [data-testid="stSidebar"] span,
         [data-testid="stSidebar"] label,
@@ -180,9 +534,19 @@ def inject_custom_css(dark_mode: bool) -> None:
         }}
         [data-testid="stVerticalBlockBorderWrapper"] {{
             background-color: {p["surface"]};
-            border: 1px solid {p["border"]} !important;
+            border: {p["border"]} !important;
             border-radius: 12px;
+            box-shadow: {p["elevation_shadow"]};
+            animation: cardReveal 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+            transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease;
         }}
+        [data-testid="stVerticalBlockBorderWrapper"]:hover {{
+            transform: translateY(-4px) scale(1.008);
+            border-color: #4F46E5 !important;
+            border-top-color: {p["card_hover_top"]} !important;
+            box-shadow: {p["hover_shadow"]};
+        }}
+        div[data-baseweb="select"] > div,
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div,
         [data-testid="stMultiSelect"] div[data-baseweb="select"] > div,
         [data-testid="stTextInput"] div[data-baseweb="input"] > div,
@@ -190,67 +554,171 @@ def inject_custom_css(dark_mode: bool) -> None:
         [data-testid="stTextArea"] textarea {{
             background-color: {p["input_bg"]} !important;
             color: {p["text"]} !important;
-            border-color: {p["input_border"]} !important;
+            border: 1.5px solid {p["input_border"]} !important;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }}
+        div[data-baseweb="select"] > div *,
+        [data-testid="stTextInput"] input::placeholder,
+        [data-testid="stTextArea"] textarea::placeholder {{
+            color: {p["text"]};
+        }}
+        [data-testid="stSelectbox"] div[data-baseweb="select"] > div:hover,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"] > div:hover,
+        [data-testid="stTextInput"] div[data-baseweb="input"] > div:hover,
+        [data-testid="stTextArea"] textarea:hover {{
+            border-color: #4F46E5 !important;
+        }}
+        [data-testid="stSelectbox"] div[data-baseweb="select"]:focus-within > div,
+        [data-testid="stMultiSelect"] div[data-baseweb="select"]:focus-within > div,
+        [data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
+        [data-testid="stTextArea"] textarea:focus {{
+            border-color: #4F46E5 !important;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.28), 0 0 12px rgba(0, 71, 171, 0.32) !important;
+            outline: none !important;
         }}
         [data-testid="stSelectbox"] svg,
         [data-testid="stMultiSelect"] svg {{
             fill: {p["text"]} !important;
         }}
-        [data-testid="stMultiSelect"] span[data-baseweb="tag"] {{
+        [data-testid="stMultiSelect"] span[data-baseweb="tag"],
+        [data-testid="stMultiSelect"] span[data-baseweb="tag"] * {{
             background-color: #0047AB !important;
             color: #FFFFFF !important;
-            border: 1px solid #4F46E5 !important;
+            border-color: #4F46E5 !important;
+        }}
+        div[data-baseweb="popover"],
+        div[data-baseweb="popover"] ul[role="listbox"],
+        ul[role="listbox"],
+        li[role="option"] {{
+            background-color: {p["input_bg"]} !important;
+            color: {p["text"]} !important;
         }}
         div[data-baseweb="popover"] ul[role="listbox"] {{
-            background-color: {p["surface"]} !important;
+            border: 1.5px solid {p["input_border"]} !important;
+            box-shadow: {p["elevation_shadow"]};
+        }}
+        li[role="option"]:hover,
+        li[role="option"][aria-selected="true"] {{
+            background-color: {p["listbox_hover"]} !important;
             color: {p["text"]} !important;
-            border: 1px solid {p["border"]} !important;
+        }}
+        [data-testid="stDataFrame"],
+        [data-testid="stDataFrame"] * {{
+            font-variant-numeric: tabular-nums;
         }}
         [data-testid="stDataFrame"] {{
-            border: 1px solid {p["border"]};
+            {p["gdg_vars"]}
+            border: {p["border"]};
             border-radius: 10px;
             overflow: hidden;
+            background-color: {p["input_bg"]};
+        }}
+        div[data-baseweb="checkbox"]:has(input[role="switch"]) > div:first-child {{
+            background-color: {p["toggle_off_bg"]} !important;
+            border: 1.5px solid {p["toggle_off_border"]} !important;
+        }}
+        div[data-baseweb="checkbox"]:has(input[role="switch"]:checked) > div:first-child {{
+            background-color: #0047AB !important;
+            border: 1.5px solid #0047AB !important;
+        }}
+        div[data-baseweb="checkbox"]:has(input[role="switch"]) > div:first-child > div {{
+            background-color: #FFFFFF !important;
+        }}
+        .stButton > button,
+        [data-testid="stDownloadButton"] > button {{
+            transition: transform 0.20s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.20s ease, border-color 0.20s ease, background-color 0.18s ease !important;
         }}
         .stButton > button[kind="primary"],
-        button[data-testid="stBaseButton-primary"] {{
+        button[kind="primary"],
+        [data-testid="stBaseButton-primary"] {{
             background-color: #0047AB !important;
             color: #FFFFFF !important;
-            border: 1px solid #4F46E5 !important;
+            border: {p["primary_btn_border"]} !important;
+            box-shadow: {p["elevation_shadow"]};
         }}
-        .stButton > button[kind="primary"]:hover,
-        button[data-testid="stBaseButton-primary"]:hover {{
-            background-color: #0B5ED7 !important;
+        .stButton > button[kind="primary"] *,
+        button[kind="primary"] *,
+        [data-testid="stBaseButton-primary"] * {{
             color: #FFFFFF !important;
         }}
+        .stButton > button[kind="primary"]:hover,
+        button[kind="primary"]:hover,
+        [data-testid="stBaseButton-primary"]:hover {{
+            background-color: #0B5ED7 !important;
+            color: #FFFFFF !important;
+            transform: translateY(-2px);
+            box-shadow: {p["hover_shadow"]} !important;
+            border-color: #4F46E5 !important;
+        }}
         .stButton > button[kind="secondary"],
-        button[data-testid="stBaseButton-secondary"],
+        button[kind="secondary"],
+        [data-testid="stBaseButton-secondary"],
         [data-testid="stDownloadButton"] > button {{
             background-color: {p["surface"]} !important;
             color: {p["text"]} !important;
-            border: 1px solid {p["border"]} !important;
+            border: {p["border"]} !important;
+            box-shadow: {p["elevation_shadow"]};
+        }}
+        .stButton > button[kind="secondary"] *,
+        button[kind="secondary"] *,
+        [data-testid="stBaseButton-secondary"] *,
+        [data-testid="stDownloadButton"] > button * {{
+            color: {p["text"]} !important;
         }}
         .stButton > button[kind="secondary"]:hover,
-        button[data-testid="stBaseButton-secondary"]:hover,
+        button[kind="secondary"]:hover,
+        [data-testid="stBaseButton-secondary"]:hover,
         [data-testid="stDownloadButton"] > button:hover {{
+            transform: translateY(-2px);
             border-color: #4F46E5 !important;
+            box-shadow: {p["hover_shadow"]} !important;
+        }}
+        .stButton > button:active,
+        button[kind="primary"]:active,
+        button[kind="secondary"]:active,
+        [data-testid="stBaseButton-primary"]:active,
+        [data-testid="stBaseButton-secondary"]:active,
+        [data-testid="stDownloadButton"] > button:active {{
+            transform: translateY(1px) scale(0.985) !important;
         }}
         .finsight-banner {{
+            position: relative;
+            overflow: hidden;
             background: linear-gradient(135deg, #0A1931 0%, #0047AB 55%, #6D28D9 100%);
             border: 1px solid rgba(79, 70, 229, 0.55);
+            border-top: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 12px;
             padding: 1.15rem 1.45rem;
             margin-bottom: 1.1rem;
+            min-height: 108px;
+            box-sizing: border-box;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 8px 24px rgba(10, 25, 49, 0.24);
+            box-shadow: {p["elevation_shadow"]};
+            animation: fadeSlideUp 0.30s cubic-bezier(0.22, 1, 0.36, 1) both;
         }}
-        .finsight-title {{
-            font-size: 1.55rem;
-            font-weight: 800;
+        .finsight-banner::after {{
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 38%;
+            background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.13) 50%, rgba(255,255,255,0) 100%);
+            pointer-events: none;
+            will-change: transform, opacity;
+            animation: bannerSheen 7s ease-in-out 1.5s infinite;
+        }}
+        .finsight-title,
+        h1.finsight-title {{
+            font-size: 2rem !important;
+            line-height: 1.2 !important;
+            font-weight: 800 !important;
             letter-spacing: 0.03em;
             color: #FFFFFF !important;
-            margin: 0;
+            margin: 0 !important;
+            padding: 0 !important;
         }}
         .finsight-subtitle {{
             color: rgba(255, 255, 255, 0.88) !important;
@@ -258,14 +726,22 @@ def inject_custom_css(dark_mode: bool) -> None:
             margin-top: 0.22rem;
         }}
         .finsight-banner .badge-calibrated {{
-            background: rgba(152, 230, 195, 0.18) !important;
-            color: #98E6C3 !important;
-            border: 1px solid #98E6C3 !important;
+            background: #98E6C3 !important;
+            color: #0A1931 !important;
+            border: 1px solid #0A1931 !important;
+            box-shadow: 0 2px 10px rgba(10, 25, 49, 0.22);
+        }}
+        .finsight-banner .badge-calibrated .live-beacon,
+        .finsight-banner .badge-calibrated .live-beacon::after {{
+            background-color: #0A1931 !important;
         }}
         .finsight-section-header {{
-            border-left: 4px solid #0047AB;
+            border-left: 3.5px solid #0047AB;
             padding: 0.25rem 0 0.25rem 0.9rem;
             margin: 0.2rem 0 0.9rem 0;
+            min-height: 54px;
+            box-sizing: border-box;
+            animation: cardReveal 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
         }}
         .finsight-section-title {{
             color: {p["text"]};
@@ -280,13 +756,42 @@ def inject_custom_css(dark_mode: bool) -> None:
             margin-top: 0.22rem;
         }}
         .finsight-kpi-card {{
+            position: relative;
+            overflow: hidden;
             background-color: {p["kpi_bg"]};
-            border: 1px solid {p["kpi_border"]};
-            border-top: 3px solid #0047AB;
+            border: {p["kpi_border"]};
+            border-top: 3.5px solid #0047AB;
             border-radius: 12px;
             padding: 0.95rem 1.1rem;
+            min-height: 114px;
+            box-sizing: border-box;
             height: 100%;
             box-shadow: {p["kpi_shadow"]};
+            animation: cardReveal 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+            transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+        }}
+        .finsight-kpi-card::before,
+        .sar-paper::before {{
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 45%;
+            background: {p["sheen_grad"]};
+            transform: translateX(-140%) skewX(-22deg);
+            transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+            pointer-events: none;
+        }}
+        .finsight-kpi-card:hover {{
+            transform: translateY(-4px) scale(1.008);
+            box-shadow: {p["hover_shadow"]};
+            border-color: #4F46E5;
+            border-top-color: {p["card_hover_top"]} !important;
+        }}
+        .finsight-kpi-card:hover::before,
+        .sar-paper:hover::before {{
+            transform: translateX(240%) skewX(-22deg);
         }}
         .finsight-kpi-label {{
             color: {p["muted"]};
@@ -299,39 +804,17 @@ def inject_custom_css(dark_mode: bool) -> None:
             color: {p["text"]};
             font-size: 1.52rem;
             font-weight: 700;
+            font-variant-numeric: tabular-nums;
             margin: 0.25rem 0 0.2rem 0;
             line-height: 1.2;
         }}
         .finsight-kpi-desc {{
             color: {p["muted"]};
             font-size: 0.78rem;
+            font-variant-numeric: tabular-nums;
         }}
-        .finsight-swatch-grid {{
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.55rem;
-            margin-top: 0.65rem;
-        }}
-        .finsight-swatch-item {{
-            display: flex;
-            align-items: center;
-            gap: 0.55rem;
-            background: {p["kpi_bg"]};
-            border: 1px solid {p["kpi_border"]};
-            border-radius: 8px;
-            padding: 0.45rem 0.6rem;
-        }}
-        .finsight-swatch-chip {{
-            width: 18px;
-            height: 18px;
-            border-radius: 5px;
-            border: 1px solid {p["border"]};
-            flex-shrink: 0;
-        }}
-        .finsight-swatch-meta {{
-            font-size: 0.76rem;
-            line-height: 1.2;
-            color: {p["text"]};
+        code {{
+            font-variant-numeric: tabular-nums;
         }}
         .risk-pill {{
             display: inline-block;
@@ -341,11 +824,13 @@ def inject_custom_css(dark_mode: bool) -> None:
             font-weight: 700;
             letter-spacing: 0.05em;
             text-transform: uppercase;
+            font-variant-numeric: tabular-nums;
         }}
         .risk-high {{
             background: {p["high_bg"]};
             color: {p["high_fg"]};
             border: 1px solid {p["high_border"]};
+            animation: pulseAlert 2.4s ease-in-out infinite;
         }}
         .risk-medium {{
             background: {p["med_bg"]};
@@ -353,9 +838,10 @@ def inject_custom_css(dark_mode: bool) -> None:
             border: 1px solid {p["med_border"]};
         }}
         .risk-low, .badge-calibrated, .badge-live {{
-            background: {p["low_bg"]};
-            color: {p["low_fg"]};
-            border: 1px solid {p["low_border"]};
+            background: {p["low_bg"]} !important;
+            color: {p["low_fg"]} !important;
+            border: 1px solid {p["low_border"]} !important;
+            box-shadow: 0 2px 8px rgba(10, 25, 49, 0.14);
         }}
         .badge-offline {{
             background: {p["offline_bg"]};
@@ -363,24 +849,128 @@ def inject_custom_css(dark_mode: bool) -> None:
             border: 1px solid {p["offline_border"]};
         }}
         .sar-paper {{
+            position: relative;
+            overflow: hidden;
             background-color: {p["sar_bg"]};
-            border-left: 4px solid #6D28D9;
-            border-top: 1px solid {p["sar_border"]};
-            border-right: 1px solid {p["sar_border"]};
-            border-bottom: 1px solid {p["sar_border"]};
+            border: {p["sar_border"]};
+            border-left: 3.5px solid #6D28D9;
             border-radius: 8px;
             padding: 1.25rem 1.4rem;
             font-size: 0.95rem;
             line-height: 1.68;
+            font-variant-numeric: tabular-nums;
+            color: {p["text"]};
+            box-shadow: {p["elevation_shadow"]};
+            animation: cardReveal 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+            transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+        }}
+        .sar-paper:hover {{
+            transform: translateY(-4px) scale(1.008);
+            border-color: #4F46E5;
+            border-top-color: {p["card_hover_top"]};
+            box-shadow: {p["hover_shadow"]};
+        }}
+        .finsight-ledger-wrap {{
+            width: 100%;
+            min-height: 360px;
+            max-height: 360px;
+            box-sizing: border-box;
+            overflow-x: auto;
+            overflow-y: auto;
+            border: {p["border"]};
+            border-radius: 10px;
+            background-color: {p["table_row_bg"]};
+            box-shadow: {p["elevation_shadow"]};
+            margin-bottom: 0.45rem;
+        }}
+        .finsight-ledger-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.84rem;
+            font-variant-numeric: tabular-nums;
             color: {p["text"]};
         }}
-        hr {{
-            border-color: {p["border"]};
+        .finsight-ledger-table thead th {{
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background-color: {p["table_header_bg"]};
+            color: #FFFFFF !important;
+            font-weight: 700;
+            text-align: left;
+            padding: 0.62rem 0.78rem;
+            border-bottom: 1.5px solid #4F46E5;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
         }}
-        </style>
-        """,
+        .finsight-ledger-table tbody tr {{
+            background-color: {p["table_row_bg"]};
+            border-bottom: 1px solid {p["table_border"]};
+            transition: background-color 0.14s ease;
+        }}
+        .finsight-ledger-table tbody tr:nth-child(even) {{
+            background-color: {p["table_row_alt_bg"]};
+        }}
+        .finsight-ledger-table tbody tr:hover {{
+            background-color: {p["listbox_hover"]};
+        }}
+        .finsight-ledger-table td {{
+            padding: 0.52rem 0.78rem;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+            color: {p["text"]};
+        }}
+        .finsight-ledger-table td.num-col,
+        .finsight-ledger-table th.num-col {{
+            text-align: right;
+        }}
+        hr {{
+            border-color: {p["border_color"]};
+        }}
+        @media (prefers-reduced-motion: reduce) {{
+            .finsight-ambient-mesh,
+            .finsight-banner::after,
+            .live-beacon::after,
+            .finsight-kpi-card::before,
+            .sar-paper::before {{
+                display: none !important;
+                animation: none !important;
+            }}
+            *, *::before, *::after {{
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.001ms !important;
+            }}
+        }}
+        {reduced_motion_override}
+</style>"""
+    st.markdown(css_markup, unsafe_allow_html=True)
+    st.markdown(
+        '<div class="finsight-ambient-mesh" aria-hidden="true">'
+        '<div class="ambient-orb orb-blue"></div>'
+        '<div class="ambient-orb orb-violet"></div>'
+        "</div>",
         unsafe_allow_html=True,
     )
+
+
+def render_hero_banner() -> None:
+    """Render the top hero command banner cleanly without duplicate style tags."""
+    banner_html = (
+        '<div class="finsight-banner">'
+        "<div>"
+        '<h1 class="finsight-title" style="font-size: 2rem; line-height: 1.2; font-weight: 800; margin: 0; padding: 0;">'
+        "FINSIGHT · MULE ACCOUNT DETECTION WORKBENCH</h1>"
+        '<div class="finsight-subtitle">'
+        "FIU-IND Anti-Money Laundering Surveillance · PMLA 2002 &amp; RBI KYC Compliance Engine"
+        "</div>"
+        "</div>"
+        '<div style="text-align: right;">'
+        '<span class="risk-pill badge-calibrated"><span class="live-beacon"></span>INR (₹) CALIBRATED</span>'
+        "</div>"
+        "</div>"
+    )
+    st.markdown(banner_html, unsafe_allow_html=True)
 
 
 def render_spacer(height: str = "0.75rem") -> None:
@@ -404,13 +994,18 @@ def render_section_header(title: str, subtitle: str, accent_color: str = "#0047A
 
 
 def render_kpi_card(
-    title: str, value: str, subtitle: str, accent_color: str = "#0047AB"
+    title: str,
+    value: str,
+    subtitle: str,
+    accent_color: str = "#0047AB",
+    delay_ms: int = 0,
 ) -> None:
     """Render an XSS-safe native HTML KPI card accented from the 6-color FINSIGHT palette."""
     safe_accent = accent_color if accent_color in _KPI_ACCENTS else "#0047AB"
+    safe_delay = delay_ms if delay_ms in _KPI_DELAYS else 0
     st.markdown(
         f"""
-        <div class="finsight-kpi-card" style="border-top-color: {safe_accent};">
+        <div class="finsight-kpi-card" style="border-top-color: {safe_accent}; animation-delay: {safe_delay}ms;">
             <div class="finsight-kpi-label">{html.escape(title)}</div>
             <div class="finsight-kpi-value">{html.escape(value)}</div>
             <div class="finsight-kpi-desc">{html.escape(subtitle)}</div>
@@ -452,11 +1047,32 @@ def format_inr(amount: float | int | None, compact: bool = False) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def load_logo_bytes(logo_mtime: float) -> bytes | None:
-    """Read and cache FINSIGHT logo bytes keyed only by modification timestamp."""
+def load_logo_data_uri(logo_mtime: float) -> str | None:
+    """Read and cache FINSIGHT logo as an in-memory base64 data URI."""
     if logo_mtime <= 0.0 or not LOGO_PATH.exists():
         return None
-    return LOGO_PATH.read_bytes()
+    encoded = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _build_priority_selector_options(
+    acct_df: pd.DataFrame,
+    presets: dict[str, dict[str, Any]],
+    active_account: str,
+    limit: int = PRIORITY_SELECTOR_LIMIT,
+) -> list[str]:
+    """Return Top 250 priority accounts + presets + active account to avoid 18k-item DOM serialization."""
+    top_ids = acct_df["Account_ID"].head(limit).astype(str).tolist()
+    seen = set(top_ids)
+    for preset_id in presets:
+        pid = str(preset_id)
+        if pid not in seen:
+            top_ids.append(pid)
+            seen.add(pid)
+    act = str(active_account or "").strip()
+    if act and act not in seen:
+        top_ids.append(act)
+    return top_ids
 
 
 @st.cache_data(show_spinner=False)
@@ -563,9 +1179,12 @@ def get_cached_subgraph(
     max_nodes: int,
     enable_physics: bool,
     dark_mode: bool,
+    layout_mode: str,
     _tx_df: pd.DataFrame,
 ) -> dict[str, Any]:
-    """Run and cache 2-hop topology extraction keyed by account, mtime, and visual controls."""
+    """Run and cache 2-hop topology extraction keyed by account, mtime, layout, and visual controls."""
+    from src.graph_engine import build_account_subgraph
+
     return build_account_subgraph(
         account_id,
         _tx_df,
@@ -574,6 +1193,296 @@ def get_cached_subgraph(
         max_nodes=max_nodes,
         enable_physics=enable_physics,
         dark_mode=dark_mode,
+        layout_mode=layout_mode,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def get_cached_timeline(account_id: str, mtime: float, _tx_df: pd.DataFrame) -> list[dict]:
+    """Return ordered inbound/outbound timeline events for single-account Plotly charts."""
+    from src.graph_engine import get_account_timeline_data
+
+    return get_account_timeline_data(account_id, _tx_df, cache_key=mtime)
+
+
+def build_fund_flow_sankey(sankey_data: dict[str, Any], dark_mode: bool) -> go.Figure:
+    """Build interactive Plotly Sankey diagram showing inbound -> focal -> outbound INR flows."""
+    import plotly.graph_objects as go
+
+    text_color = "#FFFFFF" if dark_mode else "#0A1931"
+    focal_acc = str(sankey_data.get("focal_account", "SUBJECT"))
+    inbound = sankey_data.get("inbound") or []
+    outbound = sankey_data.get("outbound") or []
+
+    labels: list[str] = []
+    node_colors: list[str] = []
+    sources: list[int] = []
+    targets: list[int] = []
+    values: list[float] = []
+    link_colors: list[str] = []
+    link_customdata: list[str] = []
+
+    link_rgba = {
+        "HIGH": "rgba(239, 68, 68, 0.42)",
+        "MEDIUM": "rgba(245, 158, 11, 0.36)",
+        "LOW": "rgba(152, 230, 195, 0.38)",
+    }
+
+    for item in inbound:
+        tier = str(item.get("risk_tier", "LOW")).upper()
+        labels.append(f"IN · {item['account_id']}")
+        node_colors.append(TIER_CHART_COLORS.get(tier, "#98E6C3"))
+
+    focal_idx = len(labels)
+    labels.append(f"★ {focal_acc}")
+    node_colors.append(TIER_CHART_COLORS["FOCAL"])
+
+    for item in outbound:
+        tier = str(item.get("risk_tier", "LOW")).upper()
+        labels.append(f"OUT · {item['account_id']}")
+        node_colors.append(TIER_CHART_COLORS.get(tier, "#6D28D9"))
+
+    for i, item in enumerate(inbound):
+        tier = str(item.get("risk_tier", "LOW")).upper()
+        amt = float(item.get("amount", 0.0))
+        cnt = int(item.get("txn_count", 1))
+        sources.append(i)
+        targets.append(focal_idx)
+        values.append(max(amt, 1.0))
+        link_colors.append(link_rgba.get(tier, "rgba(152, 230, 195, 0.38)"))
+        link_customdata.append(
+            f"{item['account_id']} → {focal_acc}<br>Amount: {format_inr(amt)} ({cnt} txn) · Tier: {tier}"
+        )
+
+    out_offset = focal_idx + 1
+    for j, item in enumerate(outbound):
+        tier = str(item.get("risk_tier", "LOW")).upper()
+        amt = float(item.get("amount", 0.0))
+        cnt = int(item.get("txn_count", 1))
+        sources.append(focal_idx)
+        targets.append(out_offset + j)
+        values.append(max(amt, 1.0))
+        out_link_col = (
+            "rgba(239, 68, 68, 0.44)"
+            if tier == "HIGH"
+            else ("rgba(245, 158, 11, 0.36)" if tier == "MEDIUM" else "rgba(109, 40, 217, 0.40)")
+        )
+        link_colors.append(out_link_col)
+        link_customdata.append(
+            f"{focal_acc} → {item['account_id']}<br>Amount: {format_inr(amt)} ({cnt} txn) · Tier: {tier}"
+        )
+
+    return go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node={
+                    "pad": 16,
+                    "thickness": 18,
+                    "line": {
+                        "color": "rgba(255,255,255,0.22)" if dark_mode else "#E2E8F0",
+                        "width": 0.8,
+                    },
+                    "label": labels,
+                    "color": node_colors,
+                    "hovertemplate": "%{label}<br>Total Flow: ₹%{value:,.2f}<extra></extra>",
+                },
+                link={
+                    "source": sources,
+                    "target": targets,
+                    "value": values,
+                    "color": link_colors,
+                    "customdata": link_customdata,
+                    "hovertemplate": "%{customdata}<extra></extra>",
+                },
+            )
+        ],
+        layout={
+            "paper_bgcolor": "rgba(0,0,0,0)",
+            "plot_bgcolor": "rgba(0,0,0,0)",
+            "font": {"color": text_color, "size": 11},
+            "margin": {"l": 8, "r": 8, "t": 12, "b": 12},
+            "height": 380,
+        },
+    )
+
+
+def build_structuring_timeline(
+    timeline_data: list[dict[str, Any]],
+    account_id: str,
+    dark_mode: bool,
+) -> go.Figure:
+    """Build interactive INR structuring & velocity timeline with PAN and RTGS threshold lines."""
+    import plotly.graph_objects as go
+
+    text_color = "#FFFFFF" if dark_mode else "#0A1931"
+    grid_color = "rgba(255,255,255,0.10)" if dark_mode else "rgba(10,25,49,0.10)"
+    stem_color = "rgba(148,163,184,0.34)" if dark_mode else "rgba(79,70,229,0.22)"
+
+    traces: list[go.Scatter] = []
+    if timeline_data:
+        has_ts = bool(timeline_data[0].get("timestamp")) and timeline_data[0]["timestamp"] != "1"
+        in_x, in_y, in_hover = [], [], []
+        out_std_x, out_std_y, out_std_hover = [], [], []
+        out_hr_x, out_hr_y, out_hr_hover = [], [], []
+        stem_x: list[Any] = []
+        stem_y: list[Any] = []
+
+        for ev in timeline_data:
+            x_val = ev["timestamp"] if has_ts else ev["step"]
+            amt = float(ev["amount"])
+            tier = str(ev.get("risk_tier", "LOW")).upper()
+            hover_txt = (
+                f"<b>{html.escape(ev['direction'])}</b> · {html.escape(str(ev['txn_id']))}<br>"
+                f"Counterparty: {html.escape(str(ev['counterparty']))}<br>"
+                f"Amount: {format_inr(amt)}<br>"
+                f"Time: {html.escape(str(x_val))} · Risk Tier: {tier}"
+            )
+            stem_x.extend([x_val, x_val, None])
+            stem_y.extend([0.0, amt, None])
+
+            if ev["direction"] == "INBOUND":
+                in_x.append(x_val)
+                in_y.append(amt)
+                in_hover.append(hover_txt)
+            elif tier == "HIGH" or (45_000.0 <= amt <= 50_000.0) or (180_000.0 <= amt <= 200_000.0):
+                out_hr_x.append(x_val)
+                out_hr_y.append(amt)
+                out_hr_hover.append(hover_txt)
+            else:
+                out_std_x.append(x_val)
+                out_std_y.append(amt)
+                out_std_hover.append(hover_txt)
+
+        traces.append(
+            go.Scatter(
+                x=stem_x,
+                y=stem_y,
+                mode="lines",
+                line={"color": stem_color, "width": 1.2},
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        if in_x:
+            traces.append(
+                go.Scatter(
+                    x=in_x,
+                    y=in_y,
+                    mode="markers",
+                    name="Inbound Credit",
+                    marker={
+                        "color": "#98E6C3",
+                        "size": 9,
+                        "symbol": "triangle-up",
+                        "line": {"color": "#0A1931", "width": 0.8},
+                    },
+                    hovertext=in_hover,
+                    hoverinfo="text",
+                )
+            )
+        if out_std_x:
+            traces.append(
+                go.Scatter(
+                    x=out_std_x,
+                    y=out_std_y,
+                    mode="markers",
+                    name="Outbound Debit",
+                    marker={
+                        "color": "#6D28D9",
+                        "size": 9,
+                        "symbol": "diamond",
+                        "line": {"color": "#FFFFFF", "width": 0.7},
+                    },
+                    hovertext=out_std_hover,
+                    hoverinfo="text",
+                )
+            )
+        if out_hr_x:
+            traces.append(
+                go.Scatter(
+                    x=out_hr_x,
+                    y=out_hr_y,
+                    mode="markers",
+                    name="Flagged / Structuring Debit",
+                    marker={
+                        "color": "#EF4444",
+                        "size": 10,
+                        "symbol": "diamond",
+                        "line": {"color": "#FFFFFF", "width": 0.8},
+                    },
+                    hovertext=out_hr_hover,
+                    hoverinfo="text",
+                )
+            )
+
+    return go.Figure(
+        data=traces,
+        layout={
+            "paper_bgcolor": "rgba(0,0,0,0)",
+            "plot_bgcolor": "rgba(0,0,0,0)",
+            "font": {"color": text_color, "size": 11},
+            "legend": {"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1.0},
+            "xaxis": {
+                "title": f"Transaction Sequence / Timestamp ({account_id})",
+                "gridcolor": grid_color,
+                "zeroline": False,
+            },
+            "yaxis": {
+                "title": "Transfer Amount (INR)",
+                "gridcolor": grid_color,
+                "tickprefix": "₹",
+                "zeroline": False,
+            },
+            "shapes": [
+                {
+                    "type": "line",
+                    "xref": "paper",
+                    "yref": "y",
+                    "x0": 0,
+                    "x1": 1,
+                    "y0": 50_000,
+                    "y1": 50_000,
+                    "line": {"color": "#F59E0B", "width": 1.5, "dash": "dash"},
+                },
+                {
+                    "type": "line",
+                    "xref": "paper",
+                    "yref": "y",
+                    "x0": 0,
+                    "x1": 1,
+                    "y0": 200_000,
+                    "y1": 200_000,
+                    "line": {"color": "#EF4444", "width": 1.5, "dash": "dash"},
+                },
+            ],
+            "annotations": [
+                {
+                    "xref": "paper",
+                    "yref": "y",
+                    "x": 0.01,
+                    "y": 50_000,
+                    "xanchor": "left",
+                    "yanchor": "bottom",
+                    "text": "₹50,000 PAN Limit",
+                    "showarrow": False,
+                    "font": {"color": "#F59E0B", "size": 11},
+                },
+                {
+                    "xref": "paper",
+                    "yref": "y",
+                    "x": 0.01,
+                    "y": 200_000,
+                    "xanchor": "left",
+                    "yanchor": "bottom",
+                    "text": "₹2,00,000 RTGS Threshold",
+                    "showarrow": False,
+                    "font": {"color": "#EF4444", "size": 11},
+                },
+            ],
+            "margin": {"l": 12, "r": 12, "t": 36, "b": 12},
+            "height": 360,
+        },
     )
 
 
@@ -588,6 +1497,8 @@ def get_cached_sar(
     _api_key: str | None = None,
 ) -> str:
     """Cache SAR generation per account, dataset timestamp, key fingerprint, and refresh nonce."""
+    from src.sar_generator import generate_rbi_sar
+
     return generate_rbi_sar(_analysis, _graph_stats, api_key=_api_key)
 
 
@@ -677,13 +1588,18 @@ def _init_session_state(default_account: str) -> None:
 
     defaults: dict[str, Any] = {
         "cfg_dark_mode": True,
+        "cfg_full_motion": True,
+        "cfg_graph_layout": "force",
         "cfg_max_graph_nodes": 65,
         "cfg_enable_graph_physics": False,
         "cfg_currency_mode": "compact",
         "cfg_sar_auto_generate": True,
         "active_nav": "Executive Triage",
+        "active_nav_idx": 0,
         "_prev_active_nav": "Executive Triage",
+        "_prev_nav_theme": "dark",
         "selected_account": default_account,
+        "sar_cache": None,
         "sar_cache_by_account": {},
         "sar_refresh_nonce": {},
     }
@@ -702,15 +1618,35 @@ def _apply_pending_state() -> None:
         st.session_state["w_gemini_api_key"] = ""
 
 
+def _select_preset(acc_id: str) -> None:
+    """Sync preset click into selected_account and dropdown selector before rerun."""
+    st.session_state["selected_account"] = acc_id
+    st.session_state["global_account_selector"] = acc_id
+    st.session_state["sar_cache"] = None
+
+
 def _sync_selected_account() -> None:
     """Sync top account selector widget back to persistent selected_account."""
     chosen = st.session_state.get("global_account_selector")
     if chosen:
         st.session_state["selected_account"] = chosen
+        st.session_state["sar_cache"] = None
 
 
 def _on_dark_mode_change() -> None:
     st.session_state["cfg_dark_mode"] = bool(st.session_state.get("w_dark_mode", True))
+
+
+def _on_motion_change() -> None:
+    label = st.session_state.get("w_motion_mode", MOTION_MODE_LABELS[True])
+    st.session_state["cfg_full_motion"] = label == MOTION_MODE_LABELS[True]
+
+
+def _on_layout_mode_change() -> None:
+    label = st.session_state.get("w_graph_layout_mode", GRAPH_LAYOUT_LABELS["force"])
+    st.session_state["cfg_graph_layout"] = (
+        "hierarchical" if label == GRAPH_LAYOUT_LABELS["hierarchical"] else "force"
+    )
 
 
 def _on_max_nodes_change() -> None:
@@ -735,6 +1671,15 @@ def _on_sar_mode_change() -> None:
     st.session_state["cfg_sar_auto_generate"] = label == SAR_MODE_LABELS[True]
 
 
+def _on_sidebar_nav_change() -> None:
+    """Sync native sidebar radio selection into active_nav session keys."""
+    chosen = st.session_state.get("w_sidebar_nav_radio")
+    if chosen in NAV_OPTIONS:
+        st.session_state["active_nav"] = chosen
+        st.session_state["active_nav_idx"] = NAV_OPTIONS.index(chosen)
+        st.session_state["_prev_active_nav"] = chosen
+
+
 def _active_api_key() -> tuple[str | None, str]:
     """Return active in-memory Gemini API key and its non-secret fingerprint."""
     raw = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -748,16 +1693,20 @@ def _active_api_key() -> tuple[str | None, str]:
 # Sidebar Navigation & Benchmark Presets
 # ---------------------------------------------------------------------------
 def render_sidebar(presets: dict[str, dict[str, Any]], dark_mode: bool) -> str:
-    """Render sidebar branding, 5-module navigation menu, and benchmark presets."""
-    p = _palette(dark_mode)
+    """Render sidebar branding, zero-iframe st.radio navigation, and presets."""
     logo_mtime = LOGO_PATH.stat().st_mtime if LOGO_PATH.exists() else 0.0
-    logo_bytes = load_logo_bytes(logo_mtime)
+    logo_uri = load_logo_data_uri(logo_mtime)
 
     with st.sidebar:
-        if logo_bytes is not None:
-            st.image(logo_bytes, width="stretch")
+        if logo_uri is not None:
+            st.markdown(
+                f'<div class="finsight-sidebar-logo">'
+                f'<img src="{logo_uri}" alt="FINSIGHT Logo" width="170" height="92" decoding="async" />'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown("### 🛡️ FINSIGHT AML")
+            st.markdown('<div class="finsight-sidebar-logo"><strong>🛡️ FINSIGHT AML</strong></div>', unsafe_allow_html=True)
 
         st.caption("FIU-IND Compliance & Mule Account Intelligence")
         st.divider()
@@ -767,76 +1716,52 @@ def render_sidebar(presets: dict[str, dict[str, Any]], dark_mode: bool) -> str:
             current_nav = NAV_OPTIONS[0]
             st.session_state["active_nav"] = current_nav
 
-        prev_nav = st.session_state.get("_prev_active_nav", current_nav)
-        manual_idx = st.session_state.pop("nav_manual_select", None)
-        programmatic_nav = False
-        if current_nav != prev_nav:
-            programmatic_nav = True
-            manual_idx = NAV_OPTIONS.index(current_nav)
-            st.session_state["sidebar_nav_menu"] = current_nav
+        st.session_state["active_nav_idx"] = NAV_OPTIONS.index(current_nav)
+        if st.session_state.get("w_sidebar_nav_radio") != current_nav:
+            st.session_state["w_sidebar_nav_radio"] = current_nav
 
-        selected_nav = option_menu(
-            menu_title="Compliance Modules",
+        selected_nav = st.radio(
+            "Compliance Modules",
             options=NAV_OPTIONS,
-            icons=NAV_ICONS,
-            menu_icon="shield-lock",
-            default_index=NAV_OPTIONS.index(current_nav),
-            manual_select=manual_idx,
-            key="sidebar_nav_menu",
-            styles={
-                "container": {"padding": "0!important", "background-color": "transparent"},
-                "menu-title": {
-                    "font-size": "12px",
-                    "text-transform": "uppercase",
-                    "letter-spacing": "0.08em",
-                    "font-weight": "700",
-                    "color": p["menu_title"],
-                    "margin-bottom": "4px",
-                },
-                "menu-icon": {"color": p["menu_title"], "font-size": "13px"},
-                "icon": {"color": p["nav_icon"], "font-size": "15px"},
-                "nav-link": {
-                    "font-size": "14px",
-                    "text-align": "left",
-                    "margin": "3px 0px",
-                    "color": p["nav_text"],
-                    "border-radius": "8px",
-                },
-                "nav-link-selected": {
-                    "background-color": "#0047AB",
-                    "color": "#FFFFFF",
-                    "border": "1px solid #4F46E5",
-                    "font-weight": "600",
-                },
-            },
+            key="w_sidebar_nav_radio",
+            on_change=_on_sidebar_nav_change,
         )
-        if not programmatic_nav and selected_nav in NAV_OPTIONS:
+        if selected_nav in NAV_OPTIONS:
             st.session_state["active_nav"] = selected_nav
+            st.session_state["active_nav_idx"] = NAV_OPTIONS.index(selected_nav)
         st.session_state["_prev_active_nav"] = st.session_state["active_nav"]
+        st.session_state["_prev_nav_theme"] = "dark" if dark_mode else "light"
 
         st.divider()
         st.markdown("**Quick Benchmark Presets**")
         st.caption("IBM AML HI-Small calibrated INR accounts")
 
         for acc_id, meta in presets.items():
-            btn_type = "primary" if meta["tier"] == "HIGH" else "secondary"
-            if st.button(
+            is_active = st.session_state.get("selected_account") == acc_id
+            btn_type = "primary" if is_active else "secondary"
+            st.button(
                 meta["label"],
                 key=f"preset_btn_{acc_id}",
                 width="stretch",
                 type=btn_type,
-            ):
-                st.session_state["pending_account_select"] = acc_id
-                st.rerun()
+                on_click=_select_preset,
+                args=(acc_id,),
+            )
 
         st.divider()
         with st.container(border=True):
-            st.markdown("**Model & Threshold Telemetry**")
-            st.caption(
-                "• **Detector:** IsolationForest (`contamination=0.05`)\n"
-                "• **Precision (HIGH):** `88.67%`\n"
-                "• **PAN Structuring Window:** `₹45,000 – ₹50,000`\n"
-                "• **RTGS Threshold Window:** `₹1,80,000 – ₹2,00,000`"
+            st.markdown(
+                '<div class="telemetry-header"><span class="live-beacon"></span><strong>Model &amp; Threshold Telemetry</strong></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div style="font-size: 0.80rem; line-height: 1.6; opacity: 0.9;">'
+                '• <strong>Detector:</strong> IsolationForest (<span class="finsight-mono">contamination=0.05</span>)<br>'
+                '• <strong>Precision (HIGH):</strong> <span class="finsight-mono">88.67%</span><br>'
+                '• <strong>PAN Structuring Window:</strong> <span class="finsight-mono">₹45,000 – ₹50,000</span><br>'
+                '• <strong>RTGS Threshold Window:</strong> <span class="finsight-mono">₹1,80,000 – ₹2,00,000</span>'
+                "</div>",
+                unsafe_allow_html=True,
             )
 
     return st.session_state["active_nav"]
@@ -845,31 +1770,56 @@ def render_sidebar(presets: dict[str, dict[str, Any]], dark_mode: bool) -> str:
 # ---------------------------------------------------------------------------
 # Tab 1: Executive Triage & Portfolio Surveillance
 # ---------------------------------------------------------------------------
-def render_executive_triage(acct_df: pd.DataFrame, compact_inr: bool) -> None:
-    """Render portfolio-wide unique bank account metrics and searchable alert queue."""
-    render_section_header(
-        "Portfolio Surveillance & Alert Triage",
-        "Real-time IsolationForest anomaly scoring across Savings, Current, and Corporate ledgers",
-        accent_color="#0047AB",
+def _render_html_alert_table(df_slice: pd.DataFrame) -> str:
+    """Render a zero-JS-overhead, tabular-nums HTML ledger table for initial triage paint."""
+    if df_slice.empty:
+        return '<div class="finsight-ledger-wrap" style="padding: 1rem;">No matching accounts found.</div>'
+
+    rows_html: list[str] = []
+    for row in df_slice.itertuples(index=False):
+        acc_id = html.escape(str(row.Account_ID))
+        score_str = f"{float(row.Risk_Score):.2f}"
+        badge = risk_badge_html(str(row.Risk_Tier))
+        inflow_str = html.escape(str(row.Total_Inflow))
+        outflow_str = html.escape(str(row.Total_Outflow))
+        ptr_str = f"{float(row.Pass_Through_Ratio):.2f}x"
+        vel_str = f"{int(row.Near_Limit_Velocity)}"
+        tx_str = f"{int(row.Tx_Count):,}"
+        rows_html.append(
+            f"<tr>"
+            f'<td><span class="finsight-mono">{acc_id}</span></td>'
+            f"<td class='num-col'><strong>{score_str}</strong></td>"
+            f"<td>{badge}</td>"
+            f"<td class='num-col'>{inflow_str}</td>"
+            f"<td class='num-col'>{outflow_str}</td>"
+            f"<td class='num-col'>{ptr_str}</td>"
+            f"<td class='num-col'>{vel_str}</td>"
+            f"<td class='num-col'>{tx_str}</td>"
+            f"</tr>"
+        )
+
+    body = "".join(rows_html)
+    return (
+        '<div class="finsight-ledger-wrap">'
+        '<table class="finsight-ledger-table">'
+        "<thead><tr>"
+        "<th>Account_ID</th>"
+        "<th class='num-col'>Risk_Score</th>"
+        "<th>Risk_Tier</th>"
+        "<th class='num-col'>Total_Inflow</th>"
+        "<th class='num-col'>Total_Outflow</th>"
+        "<th class='num-col'>Pass_Through</th>"
+        "<th class='num-col'>Near_Limit_Vel</th>"
+        "<th class='num-col'>Tx_Count</th>"
+        "</tr></thead>"
+        f"<tbody>{body}</tbody>"
+        "</table></div>"
     )
 
-    total_accounts = len(acct_df)
-    high_count = int((acct_df["Risk_Tier"] == "HIGH").sum())
-    med_count = int((acct_df["Risk_Tier"] == "MEDIUM").sum())
-    low_count = int((acct_df["Risk_Tier"] == "LOW").sum())
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        render_kpi_card("Monitored Accounts", f"{total_accounts:,}", "SAV / CUR / CORP Ledgers", "#0047AB")
-    with c2:
-        render_kpi_card("HIGH Risk Alerts", f"{high_count:,}", "88.67% Precision · Priority STR", "#6D28D9")
-    with c3:
-        render_kpi_card("MEDIUM Risk Watchlist", f"{med_count:,}", "Enhanced Due Diligence (EDD)", "#4F46E5")
-    with c4:
-        render_kpi_card("LOW Risk Baseline", f"{low_count:,}", "Standard KYC Monitoring", "#98E6C3")
-
-    render_spacer()
-
+@st.fragment
+def _render_triage_queue_fragment(acct_df: pd.DataFrame, compact_inr: bool) -> None:
+    """Isolated fragment for interactive triage filtering and search without full-page reruns."""
     with st.container(border=True):
         st.subheader("Alert Queue & Entity Filtering")
         f1, f2, f3 = st.columns([1.2, 1.2, 2.0])
@@ -916,8 +1866,12 @@ def render_executive_triage(acct_df: pd.DataFrame, compact_inr: bool) -> None:
             lambda v: format_inr(v, compact=compact_inr)
         )
 
-        st.dataframe(display_df, width="stretch", hide_index=True, height=340)
-        st.caption(f"Showing top {len(display_df)} of {len(filtered):,} matching bank accounts.")
+        top_25_df = display_df.head(25)
+        st.markdown(_render_html_alert_table(top_25_df), unsafe_allow_html=True)
+        st.caption(
+            f"Showing top {len(top_25_df)} priority alerts of {len(filtered):,} matching bank accounts "
+            f"(toggle below for full 100-row interactive spreadsheet)."
+        )
 
         if not filtered.empty:
             q1, q2 = st.columns([3, 1])
@@ -931,15 +1885,52 @@ def render_executive_triage(acct_df: pd.DataFrame, compact_inr: bool) -> None:
                 render_spacer()
                 if st.button("Load into Forensics →", width="stretch", type="primary"):
                     st.session_state["pending_account_select"] = chosen_from_table
-                    st.session_state["nav_manual_select"] = NAV_OPTIONS.index("Account Forensics")
+                    st.session_state["active_nav_idx"] = NAV_OPTIONS.index("Account Forensics")
                     st.session_state["active_nav"] = "Account Forensics"
+                    st.session_state["w_sidebar_nav_radio"] = "Account Forensics"
                     st.rerun()
+
+        if st.toggle("Enable Interactive Spreadsheet View (Top 100)", value=False):
+            st.dataframe(display_df, width="stretch", hide_index=True, height=340)
+
+
+def render_executive_triage(acct_df: pd.DataFrame, compact_inr: bool) -> None:
+    """Render portfolio-wide unique bank account metrics and searchable alert queue."""
+    render_section_header(
+        "Portfolio Surveillance & Alert Triage",
+        "Real-time IsolationForest anomaly scoring across Savings, Current, and Corporate ledgers",
+        accent_color="#0047AB",
+    )
+
+    total_accounts = len(acct_df)
+    high_count = int((acct_df["Risk_Tier"] == "HIGH").sum())
+    med_count = int((acct_df["Risk_Tier"] == "MEDIUM").sum())
+    low_count = int((acct_df["Risk_Tier"] == "LOW").sum())
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        render_kpi_card("Monitored Accounts", f"{total_accounts:,}", "SAV / CUR / CORP Ledgers", "#0047AB", delay_ms=0)
+    with c2:
+        render_kpi_card("HIGH Risk Alerts", f"{high_count:,}", "88.67% Precision · Priority STR", "#6D28D9", delay_ms=50)
+    with c3:
+        render_kpi_card("MEDIUM Risk Watchlist", f"{med_count:,}", "Enhanced Due Diligence (EDD)", "#4F46E5", delay_ms=100)
+    with c4:
+        render_kpi_card("LOW Risk Baseline", f"{low_count:,}", "Standard KYC Monitoring", "#98E6C3", delay_ms=150)
+
+    render_spacer()
+    _render_triage_queue_fragment(acct_df, compact_inr)
 
 
 # ---------------------------------------------------------------------------
 # Tab 2: Deep-Dive Account Forensics
 # ---------------------------------------------------------------------------
-def render_account_forensics(analysis: dict[str, Any], compact_inr: bool) -> None:
+def render_account_forensics(
+    analysis: dict[str, Any],
+    tx_df: pd.DataFrame,
+    mtime: float,
+    compact_inr: bool,
+    dark_mode: bool,
+) -> None:
     """Render single-account behavioral forensics, INR cash flows, and anomaly drivers."""
     acc_id = str(analysis.get("account_id", "UNKNOWN"))
     risk_score = float(analysis.get("risk_score", 0.0))
@@ -964,11 +1955,11 @@ def render_account_forensics(analysis: dict[str, Any], compact_inr: bool) -> Non
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        render_kpi_card("Composite Mule Score", f"{risk_score:.2f} / 100", f"Tier: {risk_tier}", score_accent)
+        render_kpi_card("Composite Mule Score", f"{risk_score:.2f} / 100", f"Tier: {risk_tier}", score_accent, delay_ms=0)
     with m2:
-        render_kpi_card("Total Credit Inflow", inflow_main, inflow_alt, "#0047AB")
+        render_kpi_card("Total Credit Inflow", inflow_main, inflow_alt, "#0047AB", delay_ms=50)
     with m3:
-        render_kpi_card("Total Debit Outflow", outflow_main, outflow_alt, "#4F46E5")
+        render_kpi_card("Total Debit Outflow", outflow_main, outflow_alt, "#4F46E5", delay_ms=100)
     with m4:
         ptr_status = "Mule Layering Alert (≈1.0)" if 0.85 <= ptr <= 1.15 else "Normal Retention"
         render_kpi_card(
@@ -976,6 +1967,7 @@ def render_account_forensics(analysis: dict[str, Any], compact_inr: bool) -> Non
             f"{ptr:.2f}x",
             ptr_status,
             "#6D28D9" if ptr >= 0.85 else "#98E6C3",
+            delay_ms=150,
         )
 
     render_spacer()
@@ -1024,6 +2016,19 @@ def render_account_forensics(analysis: dict[str, Any], compact_inr: bool) -> Non
             else:
                 st.info("No direct counterparty records returned for this account.")
 
+    render_spacer()
+    with st.container(border=True):
+        st.subheader("INR Structuring & Velocity Timeline")
+        st.caption(
+            "Inbound credits vs. outbound debits across timestamps with ₹50,000 PAN & ₹2,00,000 RTGS threshold markers"
+        )
+        timeline_events = get_cached_timeline(acc_id, mtime, tx_df)
+        if timeline_events:
+            timeline_fig = build_structuring_timeline(timeline_events, acc_id, dark_mode)
+            st.plotly_chart(timeline_fig, width="stretch", height=360, config={"displayModeBar": False})
+        else:
+            st.info("No chronological transactions available for this account.")
+
 
 # ---------------------------------------------------------------------------
 # Tab 3: 2-Hop Fund-Flow Topology (PyVis Interactive Graph)
@@ -1035,15 +2040,18 @@ def render_graph_topology(
     max_nodes: int,
     enable_physics: bool,
     dark_mode: bool,
+    layout_mode: str,
 ) -> dict[str, Any]:
-    """Build and render the cached 2-hop PyVis subgraph directly from memory."""
+    """Build and render the cached 2-hop PyVis subgraph plus interactive Plotly charts."""
     render_section_header(
         f"2-Hop Fund-Flow Topology — {account_id}",
         "Interactive PyVis network analysis detecting fan-in collection, fan-out dispersal, and mule rings",
         accent_color="#0047AB",
     )
 
-    graph_stats = get_cached_subgraph(account_id, mtime, max_nodes, enable_physics, dark_mode, tx_df)
+    graph_stats = get_cached_subgraph(
+        account_id, mtime, max_nodes, enable_physics, dark_mode, layout_mode, tx_df
+    )
     in_deg = int(graph_stats.get("in_degree", 0))
     out_deg = int(graph_stats.get("out_degree", 0))
     asymmetry = float(graph_stats.get("degree_asymmetry", 0.0))
@@ -1053,17 +2061,18 @@ def render_graph_topology(
 
     g1, g2, g3, g4 = st.columns(4)
     with g1:
-        render_kpi_card("Detected Topology", topology, f"In: {in_deg} · Out: {out_deg}", "#0047AB")
+        render_kpi_card("Detected Topology", topology, f"In: {in_deg} · Out: {out_deg}", "#0047AB", delay_ms=0)
     with g2:
-        render_kpi_card("Degree Asymmetry", f"{asymmetry:+.2f}", "(In - Out) / Total Degree", "#4F46E5")
+        render_kpi_card("Degree Asymmetry", f"{asymmetry:+.2f}", "(In - Out) / Total Degree", "#4F46E5", delay_ms=50)
     with g3:
-        render_kpi_card("2-Hop High-Risk Nodes", f"{hr_count:,}", "Full 2-hop contagion count", "#6D28D9")
+        render_kpi_card("2-Hop High-Risk Nodes", f"{hr_count:,}", "Full 2-hop contagion count", "#6D28D9", delay_ms=100)
     with g4:
         render_kpi_card(
             "Subgraph Connectivity",
             f"{in_deg + out_deg} Edges",
             f"Rendered {graph_stats.get('rendered_nodes', 0)}/{graph_stats.get('num_nodes', 0)} nodes",
             "#98E6C3",
+            delay_ms=150,
         )
 
     render_spacer()
@@ -1088,6 +2097,30 @@ def render_graph_topology(
     render_spacer()
 
     with st.container(border=True):
+        ctrl_col, leg_col = st.columns([1.1, 1.35])
+        with ctrl_col:
+            layout_options = [GRAPH_LAYOUT_LABELS["force"], GRAPH_LAYOUT_LABELS["hierarchical"]]
+            current_layout_label = GRAPH_LAYOUT_LABELS.get(layout_mode, GRAPH_LAYOUT_LABELS["force"])
+            st.radio(
+                "Graph Layout Mode",
+                options=layout_options,
+                index=layout_options.index(current_layout_label),
+                horizontal=True,
+                key="w_graph_layout_mode",
+                on_change=_on_layout_mode_change,
+            )
+        with leg_col:
+            st.markdown(
+                "<div style='padding-top: 1.55rem; font-size: 0.82rem; display: flex; flex-wrap: wrap; gap: 0.7rem;'>"
+                "<span>★ <strong style='color:#4F46E5;'>Focal Subject</strong></span>"
+                "<span>◆ <strong style='color:#EF4444;'>HIGH Risk</strong></span>"
+                "<span>● <strong style='color:#F59E0B;'>MEDIUM Risk</strong></span>"
+                "<span>● <strong style='color:#98E6C3;'>LOW Risk</strong></span>"
+                "<span>| Edges: <span style='color:#98E6C3;'>Inbound</span> · <span style='color:#6D28D9;'>Outbound</span></span>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
         physics_note = "Interactive physics ON" if enable_physics else "Stabilized (physics auto-paused)"
         pruned_note = (
             f"Showing top {graph_stats.get('rendered_nodes')} prioritized nodes out of {graph_stats.get('num_nodes')}."
@@ -1095,13 +2128,38 @@ def render_graph_topology(
             else f"Showing all {graph_stats.get('rendered_nodes', 0)} nodes."
         )
         st.caption(
-            f"💡 **Graph Legend:** Red = HIGH · Violet = MEDIUM · Blue = LOW · {pruned_note} · {physics_note}"
+            f"💡 **Layout:** `{GRAPH_LAYOUT_LABELS.get(layout_mode)}` · {pruned_note} · {physics_note} · Drag nodes or hover edges for INR details."
         )
         html_content = graph_stats.get("html_content", "")
         if html_content:
-            st.iframe(html_content, height=520, width="stretch")
+            st.iframe(html_content, height=540, width="stretch")
         else:
             st.warning("PyVis graph HTML payload was empty for the selected account.")
+
+    render_spacer()
+
+    chart_left, chart_right = st.columns([1.05, 1.0])
+    with chart_left:
+        with st.container(border=True):
+            st.subheader("Inbound-to-Outbound Fund-Flow Sankey")
+            st.caption("Top senders → focal subject → top destination accounts, weighted by INR volume")
+            sankey_data = graph_stats.get("sankey_data") or {}
+            if sankey_data.get("inbound") or sankey_data.get("outbound"):
+                sankey_fig = build_fund_flow_sankey(sankey_data, dark_mode)
+                st.plotly_chart(sankey_fig, width="stretch", height=380, config={"displayModeBar": False})
+            else:
+                st.info("No direct inbound/outbound edges available for Sankey rendering.")
+
+    with chart_right:
+        with st.container(border=True):
+            st.subheader("INR Structuring & Velocity Timeline")
+            st.caption("Inbound credits vs. outbound debits against ₹50,000 PAN & ₹2,00,000 RTGS bands")
+            timeline_data = graph_stats.get("timeline_data") or []
+            if timeline_data:
+                timeline_fig = build_structuring_timeline(timeline_data, account_id, dark_mode)
+                st.plotly_chart(timeline_fig, width="stretch", height=360, config={"displayModeBar": False})
+            else:
+                st.info("No chronological transactions available for timeline plotting.")
 
     return graph_stats
 
@@ -1109,23 +2167,18 @@ def render_graph_topology(
 # ---------------------------------------------------------------------------
 # Tab 4: FIU-IND STR / SAR Narrative Generator
 # ---------------------------------------------------------------------------
-def render_sar_workbench(
+@st.fragment
+def _render_sar_panel_fragment(
     analysis: dict[str, Any],
     graph_stats: dict[str, Any],
     mtime: float,
     compact_inr: bool,
 ) -> None:
-    """Render PMLA 2002 / RBI KYC Suspicious Transaction Report generator and export tools."""
+    """Isolated fragment for STR/SAR generation, editing, and export without full-page reruns."""
     acc_id = str(analysis.get("account_id", "UNKNOWN"))
     risk_tier = str(analysis.get("risk_tier", "LOW")).upper()
     active_key, key_fp = _active_api_key()
     auto_generate = bool(st.session_state.get("cfg_sar_auto_generate", True))
-
-    render_section_header(
-        f"FIU-IND Suspicious Transaction Report (STR / SAR) — {acc_id}",
-        f"Automated PMLA 2002 & RBI Master Direction on KYC synthesis ({GEMINI_MODEL_NAME})",
-        accent_color="#6D28D9",
-    )
 
     c_left, c_right = st.columns([2.2, 1.0])
     with c_left:
@@ -1149,27 +2202,25 @@ def render_sar_workbench(
 
     if generate_clicked:
         nonces[acc_id] = nonces.get(acc_id, 0) + 1
-        with st.spinner("Synthesizing evidence-tiered PMLA 2002 compliance narrative..."):
-            sar_store[session_cache_key] = get_cached_sar(
-                acc_id,
-                mtime,
-                key_fp,
-                nonces[acc_id],
-                analysis,
-                graph_stats,
-                _api_key=active_key,
-            )
+        sar_store[session_cache_key] = get_cached_sar(
+            acc_id,
+            mtime,
+            key_fp,
+            nonces[acc_id],
+            analysis,
+            graph_stats,
+            _api_key=active_key,
+        )
     elif session_cache_key not in sar_store and auto_generate:
-        with st.spinner("Synthesizing evidence-tiered PMLA 2002 compliance narrative..."):
-            sar_store[session_cache_key] = get_cached_sar(
-                acc_id,
-                mtime,
-                key_fp,
-                nonces.get(acc_id, 0),
-                analysis,
-                graph_stats,
-                _api_key=active_key,
-            )
+        sar_store[session_cache_key] = get_cached_sar(
+            acc_id,
+            mtime,
+            key_fp,
+            nonces.get(acc_id, 0),
+            analysis,
+            graph_stats,
+            _api_key=active_key,
+        )
 
     sar_text = sar_store.get(session_cache_key, "")
     render_spacer()
@@ -1229,21 +2280,25 @@ def render_sar_workbench(
             )
 
 
+def render_sar_workbench(
+    analysis: dict[str, Any],
+    graph_stats: dict[str, Any],
+    mtime: float,
+    compact_inr: bool,
+) -> None:
+    """Render PMLA 2002 / RBI KYC Suspicious Transaction Report generator and export tools."""
+    acc_id = str(analysis.get("account_id", "UNKNOWN"))
+    render_section_header(
+        f"FIU-IND Suspicious Transaction Report (STR / SAR) — {acc_id}",
+        f"Automated PMLA 2002 & RBI Master Direction on KYC synthesis ({GEMINI_MODEL_NAME})",
+        accent_color="#6D28D9",
+    )
+    _render_sar_panel_fragment(analysis, graph_stats, mtime, compact_inr)
+
+
 # ---------------------------------------------------------------------------
 # Tab 5: Workbench Settings & Runtime Governance
 # ---------------------------------------------------------------------------
-def _render_palette_swatches() -> None:
-    """Render live 6-color FINSIGHT palette swatch preview."""
-    items = "".join(
-        f'<div class="finsight-swatch-item">'
-        f'<span class="finsight-swatch-chip" style="background-color: {hex_code};"></span>'
-        f'<div class="finsight-swatch-meta"><strong>{html.escape(name)}</strong><br><code>{html.escape(hex_code)}</code></div>'
-        f'</div>'
-        for name, hex_code in _PALETTE_SWATCHES
-    )
-    st.markdown(f'<div class="finsight-swatch-grid">{items}</div>', unsafe_allow_html=True)
-
-
 def render_settings() -> None:
     """Render Dark/Light theme controls, in-memory Gemini key override, and performance settings."""
     render_section_header(
@@ -1256,20 +2311,29 @@ def render_settings() -> None:
 
     with col_left:
         with st.container(border=True):
-            st.subheader("Appearance")
+            st.subheader("Appearance & Motion")
             st.toggle(
                 "Dark Mode (Navy Blue #0A1931 / Light Mode #FFFFFF)",
                 value=bool(st.session_state["cfg_dark_mode"]),
                 key="w_dark_mode",
                 on_change=_on_dark_mode_change,
             )
+            motion_options = [MOTION_MODE_LABELS[True], MOTION_MODE_LABELS[False]]
+            current_motion_label = MOTION_MODE_LABELS[bool(st.session_state["cfg_full_motion"])]
+            st.radio(
+                "Motion & Ambient Effects",
+                options=motion_options,
+                index=motion_options.index(current_motion_label),
+                key="w_motion_mode",
+                on_change=_on_motion_change,
+                horizontal=True,
+            )
             mode_label = (
                 "Navy Blue Dark Mode (#0A1931)"
                 if st.session_state["cfg_dark_mode"]
                 else "White Light Mode (#FFFFFF)"
             )
-            st.caption(f"Active canvas: **{mode_label}** · Live 6-Color FINSIGHT Palette:")
-            _render_palette_swatches()
+            st.caption(f"Active canvas: **{mode_label}** · Motion: **{current_motion_label}**")
 
         render_spacer()
 
@@ -1363,6 +2427,13 @@ def render_settings() -> None:
 # Main Application Entrypoint
 # ---------------------------------------------------------------------------
 def main() -> None:
+    _init_session_state("SAV_4405_SBI")
+    _apply_pending_state()
+
+    dark_mode = bool(st.session_state["cfg_dark_mode"])
+    full_motion = bool(st.session_state["cfg_full_motion"])
+    inject_custom_css(dark_mode, full_motion)
+
     mtime = get_scored_mtime()
     try:
         tx_df = get_cached_scored_data(mtime)
@@ -1376,46 +2447,25 @@ def main() -> None:
 
     acct_df = get_account_summary_df(tx_df, mtime)
     presets = get_dynamic_presets(acct_df)
-    default_account = next(iter(presets.keys()), "SAV_4405_SBI")
-
-    _init_session_state(default_account)
-    _apply_pending_state()
-
-    dark_mode = bool(st.session_state["cfg_dark_mode"])
-    inject_custom_css(dark_mode)
 
     active_nav = render_sidebar(presets, dark_mode)
+    render_hero_banner()
 
-    st.markdown(
-        """
-        <div class="finsight-banner">
-            <div>
-                <div class="finsight-title">FINSIGHT · MULE ACCOUNT DETECTION WORKBENCH</div>
-                <div class="finsight-subtitle">
-                    FIU-IND Anti-Money Laundering Surveillance · PMLA 2002 &amp; RBI KYC Compliance Engine
-                </div>
-            </div>
-            <div style="text-align: right;">
-                <span class="risk-pill badge-calibrated">INR (₹) CALIBRATED</span>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    all_accounts = acct_df["Account_ID"].tolist()
-    current_acc = st.session_state["selected_account"]
-    if current_acc not in all_accounts and all_accounts:
-        current_acc = all_accounts[0]
+    valid_accounts = set(acct_df["Account_ID"].astype(str))
+    current_acc = str(st.session_state["selected_account"])
+    if current_acc not in valid_accounts and not acct_df.empty:
+        current_acc = str(acct_df["Account_ID"].iloc[0])
         st.session_state["selected_account"] = current_acc
-    if all_accounts and st.session_state.get("global_account_selector") not in all_accounts:
+
+    selector_options = _build_priority_selector_options(acct_df, presets, current_acc)
+    if selector_options and st.session_state.get("global_account_selector") not in selector_options:
         st.session_state["global_account_selector"] = current_acc
 
     sel_col1, sel_col2, sel_col3 = st.columns([2.2, 1.3, 1.0])
     with sel_col1:
         st.selectbox(
-            "Active Subject Account ID (SAV / CUR / CORP)",
-            options=all_accounts,
+            "Active Subject Account ID (Top 250 Priority & Presets — Search Full 18.6k in Triage)",
+            options=selector_options,
             key="global_account_selector",
             on_change=_sync_selected_account,
         )
@@ -1443,17 +2493,20 @@ def main() -> None:
     compact_inr = st.session_state["cfg_currency_mode"] == "compact"
     max_nodes = int(st.session_state["cfg_max_graph_nodes"])
     enable_physics = bool(st.session_state["cfg_enable_graph_physics"])
+    layout_mode = str(st.session_state.get("cfg_graph_layout", "force"))
 
     # Lazy tab execution: 2-hop graph runs only on graph/SAR tabs
     if active_nav == "Executive Triage":
         render_executive_triage(acct_df, compact_inr)
     elif active_nav == "Account Forensics":
-        render_account_forensics(analysis, compact_inr)
+        render_account_forensics(analysis, tx_df, mtime, compact_inr, dark_mode)
     elif active_nav == "2-Hop Topology":
-        render_graph_topology(active_account, tx_df, mtime, max_nodes, enable_physics, dark_mode)
+        render_graph_topology(
+            active_account, tx_df, mtime, max_nodes, enable_physics, dark_mode, layout_mode
+        )
     elif active_nav == "FIU-IND STR/SAR":
         graph_stats = get_cached_subgraph(
-            active_account, mtime, max_nodes, enable_physics, dark_mode, tx_df
+            active_account, mtime, max_nodes, enable_physics, dark_mode, layout_mode, tx_df
         )
         render_sar_workbench(analysis, graph_stats, mtime, compact_inr)
     elif active_nav == "Settings":

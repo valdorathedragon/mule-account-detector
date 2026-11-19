@@ -1,0 +1,8 @@
+:8080 {
+	encode zstd br gzip
+
+	@static path /static/*
+	header @static Cache-Control "public, max-age=31536000, immutable"
+
+	reverse_proxy 127.0.0.1:8501
+}
