@@ -6,6 +6,29 @@ import re
 
 MODEL_NAME = "gemini-3.8-flash"
 MAX_PROMPT_COUNTERPARTIES = 15
+GEMINI_TIMEOUT_MS = 12_000
+_GENAI_SDK: tuple[object, object] | None = None
+
+_EXCLUDED_GRAPH_KEYS = (
+    "output_path",
+    "high_risk_nodes",
+    "high_risk_node_count",
+    "html_content",
+    "rendered_nodes",
+    "rendered_edges",
+    "pruned",
+)
+
+
+def _load_genai_sdk() -> tuple[object, object]:
+    """Lazily import and cache the Google GenAI SDK modules."""
+    global _GENAI_SDK
+    if _GENAI_SDK is None:
+        from google import genai
+        from google.genai import types
+
+        _GENAI_SDK = (genai, types)
+    return _GENAI_SDK
 
 SYSTEM_INSTRUCTION = (
     "You are a senior AML Compliance Officer at an Indian scheduled commercial bank, "
@@ -160,11 +183,7 @@ def _build_prompt(analysis_payload: dict, graph_stats: dict) -> str:
     tier = str(payload.get("risk_tier", "LOW")).upper()
     linked_count = _linked_high_risk_count(account, tier, graph_stats)
 
-    stats = {
-        k: v
-        for k, v in graph_stats.items()
-        if k not in ("output_path", "high_risk_nodes", "high_risk_node_count")
-    }
+    stats = {k: v for k, v in graph_stats.items() if k not in _EXCLUDED_GRAPH_KEYS}
     stats["linked_high_risk_neighbors"] = linked_count
 
     typology_rule, _ = _tier_guidance(tier)
@@ -262,8 +281,7 @@ def generate_rbi_sar(
         return _fallback_sar(analysis_payload, graph_stats)
 
     try:
-        from google import genai
-        from google.genai import types
+        genai, types = _load_genai_sdk()
 
         config_kwargs = {
             "system_instruction": SYSTEM_INSTRUCTION,
@@ -276,7 +294,14 @@ def generate_rbi_sar(
             except Exception:
                 pass
 
-        with genai.Client(api_key=resolved_key) as client:
+        client_kwargs: dict[str, object] = {"api_key": resolved_key}
+        if hasattr(types, "HttpOptions"):
+            try:
+                client_kwargs["http_options"] = types.HttpOptions(timeout=GEMINI_TIMEOUT_MS)
+            except Exception:
+                pass
+
+        with genai.Client(**client_kwargs) as client:
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=_build_prompt(analysis_payload, graph_stats),

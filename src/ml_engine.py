@@ -1,5 +1,6 @@
 """IsolationForest anomaly scoring engine and account-level risk analysis API."""
 
+from collections import OrderedDict
 from dataclasses import dataclass
 import hashlib
 import io
@@ -23,6 +24,7 @@ HIGH_THRESHOLD = 80.0
 MEDIUM_THRESHOLD = 50.0
 NORMAL_CEILING = 79.99
 MAX_DRIVERS = 5
+INDEX_CACHE_MAXSIZE = 4
 
 
 @dataclass(frozen=True)
@@ -31,10 +33,47 @@ class _CacheRecord:
 
     features_sha256: str
     scored_sha256: str
+    stat_key: tuple[int, int, int, int, int, int] | None
     df: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class _AccountIndex:
+    """Pre-indexed row mappings and aggregates for O(1) account lookup."""
+
+    orig_rows: dict[str, np.ndarray]
+    dest_rows: dict[str, np.ndarray]
+    amount_p95: float
+    timestamps: pd.Series
+    cutoff_24h: pd.Timestamp | None
+
+
 _SCORED_CACHE: _CacheRecord | None = None
+_INDEX_CACHE: OrderedDict[object, _AccountIndex] = OrderedDict()
+
+
+def _artifact_stat_key(
+    features_path: Path, scored_path: Path, model_path: Path
+) -> tuple[int, int, int, int, int, int] | None:
+    """Return (mtime_ns, size) across the artifact tuple, or None if any file is missing."""
+    try:
+        fs = features_path.stat()
+        ss = scored_path.stat()
+        ms = model_path.stat()
+        return (fs.st_mtime_ns, fs.st_size, ss.st_mtime_ns, ss.st_size, ms.st_mtime_ns, ms.st_size)
+    except OSError:
+        return None
+
+
+def get_scored_mtime() -> float:
+    """Return latest modification timestamp across scored/feature artifacts for UI cache keys."""
+    mtimes: list[float] = []
+    for path in (SCORED_PATH, FEATURES_PATH):
+        try:
+            mtimes.append(path.stat().st_mtime)
+        except OSError:
+            continue
+    return max(mtimes) if mtimes else 0.0
 
 
 def _manifest_path_for(features_path: Path, scored_path: Path, model_path: Path) -> Path:
@@ -170,6 +209,7 @@ def train_and_score(
                 _SCORED_CACHE = _CacheRecord(
                     features_sha256=features_sha256,
                     scored_sha256=scored_sha256,
+                    stat_key=_artifact_stat_key(features_path, scored_path, model_path),
                     df=df.copy(),
                 )
             return df
@@ -218,10 +258,15 @@ def _resolve_valid_generation() -> tuple[str, str, pd.DataFrame] | None:
 
 
 def load_scored_data() -> pd.DataFrame:
-    """Load the scored dataset as a fresh copy, retraining if artifacts are missing or stale."""
+    """Load the scored dataset as a fresh copy, using an in-memory mtime fast path when unchanged."""
     global _SCORED_CACHE
     if not FEATURES_PATH.exists():
         raise FileNotFoundError(f"Feature dataset not found: {FEATURES_PATH}")
+
+    stat_key = _artifact_stat_key(FEATURES_PATH, SCORED_PATH, MODEL_PATH)
+    cached = _SCORED_CACHE
+    if cached is not None and stat_key is not None and cached.stat_key == stat_key:
+        return cached.df.copy()
 
     resolved = _resolve_valid_generation()
     if resolved is None:
@@ -231,9 +276,72 @@ def load_scored_data() -> pd.DataFrame:
     _SCORED_CACHE = _CacheRecord(
         features_sha256=features_sha256,
         scored_sha256=scored_sha256,
+        stat_key=_artifact_stat_key(FEATURES_PATH, SCORED_PATH, MODEL_PATH),
         df=df.copy(),
     )
     return df.copy()
+
+
+def _df_cache_key(df: pd.DataFrame, cache_key: object | None = None) -> object:
+    """Build a collision-resistant cache key for pre-indexed DataFrame lookups."""
+    if cache_key is not None:
+        return ("key", cache_key, len(df))
+    if df.empty:
+        return ("empty", tuple(df.columns))
+    first_txn = str(df["txn_id"].iloc[0]) if "txn_id" in df.columns else ""
+    last_txn = str(df["txn_id"].iloc[-1]) if "txn_id" in df.columns else ""
+    amt_sum = float(df["amount"].sum()) if "amount" in df.columns else 0.0
+    risk_sum = float(df["Risk_Score"].sum()) if "Risk_Score" in df.columns else 0.0
+    return ("sig", len(df), tuple(df.columns), amt_sum, risk_sum, first_txn, last_txn)
+
+
+def _get_account_index(df: pd.DataFrame, cache_key: object | None = None) -> _AccountIndex:
+    """Return or build cached per-account row index and global aggregates for `df`."""
+    key = _df_cache_key(df, cache_key=cache_key)
+    cached = _INDEX_CACHE.get(key)
+    if cached is not None:
+        _INDEX_CACHE.move_to_end(key)
+        return cached
+
+    orig_rows = {
+        str(k): np.asarray(v, dtype=np.intp)
+        for k, v in df.groupby(df["nameOrig"].astype(str), sort=False).indices.items()
+    }
+    dest_rows = {
+        str(k): np.asarray(v, dtype=np.intp)
+        for k, v in df.groupby(df["nameDest"].astype(str), sort=False).indices.items()
+    }
+    amount_p95 = float(df["amount"].quantile(0.95)) if not df.empty else 0.0
+    if "timestamp" in df.columns and not df.empty:
+        timestamps = pd.to_datetime(df["timestamp"], errors="coerce")
+        cutoff_24h = timestamps.max() - pd.Timedelta(hours=24) if timestamps.notna().any() else None
+    else:
+        timestamps = pd.Series(dtype="datetime64[ns]")
+        cutoff_24h = None
+
+    index = _AccountIndex(
+        orig_rows=orig_rows,
+        dest_rows=dest_rows,
+        amount_p95=amount_p95,
+        timestamps=timestamps,
+        cutoff_24h=cutoff_24h,
+    )
+    _INDEX_CACHE[key] = index
+    while len(_INDEX_CACHE) > INDEX_CACHE_MAXSIZE:
+        _INDEX_CACHE.popitem(last=False)
+    return index
+
+
+def _slice_account_rows(df: pd.DataFrame, account_id: str, idx: _AccountIndex) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+    """Slice incoming and outgoing rows in O(1) using pre-indexed positions."""
+    key = str(account_id)
+    out_pos = idx.orig_rows.get(key)
+    in_pos = idx.dest_rows.get(key)
+    out_arr = out_pos if out_pos is not None else np.empty(0, dtype=np.intp)
+    in_arr = in_pos if in_pos is not None else np.empty(0, dtype=np.intp)
+    outgoing = df.iloc[out_arr] if len(out_arr) else df.iloc[0:0]
+    incoming = df.iloc[in_arr] if len(in_arr) else df.iloc[0:0]
+    return incoming, outgoing, in_arr, out_arr
 
 
 def _build_top_drivers(
@@ -242,6 +350,9 @@ def _build_top_drivers(
     outgoing: pd.DataFrame,
     pass_through_ratio: float,
     df: pd.DataFrame,
+    amount_p95: float | None = None,
+    in_ts: pd.Series | None = None,
+    out_ts: pd.Series | None = None,
 ) -> list[str]:
     """Derive human-readable risk drivers from account behaviour."""
     drivers: list[str] = []
@@ -263,8 +374,8 @@ def _build_top_drivers(
         )
 
     if not incoming.empty and not outgoing.empty:
-        first_in = pd.to_datetime(incoming["timestamp"]).min()
-        first_out = pd.to_datetime(outgoing["timestamp"]).min()
+        first_in = (in_ts if in_ts is not None else pd.to_datetime(incoming["timestamp"])).min()
+        first_out = (out_ts if out_ts is not None else pd.to_datetime(outgoing["timestamp"])).min()
         lag_min = (first_out - first_in).total_seconds() / 60.0
         if 0.0 <= lag_min <= 60.0:
             drivers.append(f"Rapid turnaround: first debit {lag_min:.0f} min after first credit")
@@ -277,22 +388,57 @@ def _build_top_drivers(
     if fan_out >= 5:
         drivers.append(f"Fan-Out topology: {fan_out} unique beneficiaries")
 
-    amount_p95 = float(df["amount"].quantile(0.95))
-    high_value = int((involved["amount"] > amount_p95).sum())
+    p95 = float(df["amount"].quantile(0.95)) if amount_p95 is None else amount_p95
+    high_value = int((involved["amount"] > p95).sum())
     if high_value > 0 and len(drivers) < MAX_DRIVERS:
-        drivers.append(f"{high_value} transfers above dataset 95th percentile (INR {amount_p95:,.0f})")
+        drivers.append(f"{high_value} transfers above dataset 95th percentile (INR {p95:,.0f})")
 
     if not drivers:
         drivers.append(f"No significant anomaly drivers detected for {account_id}")
     return drivers[:MAX_DRIVERS]
 
 
-def analyze_account(account_id: str, df: pd.DataFrame | None = None) -> dict:
+def get_account_24h_totals(
+    account_id: str, df: pd.DataFrame, cache_key: object | None = None
+) -> tuple[float, float]:
+    """Compute trailing 24-hour inflow and outflow using pre-indexed positions."""
+    idx = _get_account_index(df, cache_key=cache_key)
+    incoming, outgoing, in_arr, out_arr = _slice_account_rows(df, account_id, idx)
+    if idx.cutoff_24h is not None:
+        if len(in_arr):
+            incoming = incoming.loc[idx.timestamps.iloc[in_arr] >= idx.cutoff_24h]
+        if len(out_arr):
+            outgoing = outgoing.loc[idx.timestamps.iloc[out_arr] >= idx.cutoff_24h]
+    inflow_24h = float(incoming["amount"].sum()) if not incoming.empty else 0.0
+    outflow_24h = float(outgoing["amount"].sum()) if not outgoing.empty else 0.0
+    return round(inflow_24h, 2), round(outflow_24h, 2)
+
+
+def get_account_ledger(
+    account_id: str, df: pd.DataFrame, cache_key: object | None = None
+) -> pd.DataFrame:
+    """Return sorted transaction ledger rows involving `account_id` via O(1) index lookup."""
+    idx = _get_account_index(df, cache_key=cache_key)
+    incoming, outgoing, _, _ = _slice_account_rows(df, account_id, idx)
+    combined = pd.concat([incoming, outgoing])
+    if "txn_id" in combined.columns:
+        combined = combined.drop_duplicates(subset=["txn_id"])
+    else:
+        combined = combined.drop_duplicates()
+    cols = ["txn_id", "timestamp", "nameOrig", "nameDest", "amount", "Pass_Through_Ratio", "Risk_Score"]
+    if combined.empty:
+        return combined[cols].copy()
+    return combined[cols].sort_values("timestamp").reset_index(drop=True)
+
+
+def analyze_account(
+    account_id: str, df: pd.DataFrame | None = None, cache_key: object | None = None
+) -> dict:
     """Return the strict account risk contract for downstream UI, graph and SAR modules."""
     if df is None:
         df = load_scored_data()
-    outgoing = df[df["nameOrig"] == account_id]
-    incoming = df[df["nameDest"] == account_id]
+    idx = _get_account_index(df, cache_key=cache_key)
+    incoming, outgoing, in_arr, out_arr = _slice_account_rows(df, account_id, idx)
     if outgoing.empty and incoming.empty:
         raise ValueError(f"Account not found in scored dataset: {account_id}")
 
@@ -308,6 +454,8 @@ def analyze_account(account_id: str, df: pd.DataFrame | None = None) -> dict:
     counterparties = sorted(
         set(incoming["nameOrig"].astype(str)) | set(outgoing["nameDest"].astype(str))
     )
+    in_ts = idx.timestamps.iloc[in_arr] if len(in_arr) and not idx.timestamps.empty else None
+    out_ts = idx.timestamps.iloc[out_arr] if len(out_arr) and not idx.timestamps.empty else None
 
     return {
         "account_id": str(account_id),
@@ -316,7 +464,16 @@ def analyze_account(account_id: str, df: pd.DataFrame | None = None) -> dict:
         "total_inflow": round(total_inflow, 2),
         "total_outflow": round(total_outflow, 2),
         "pass_through_ratio": round(pass_through_ratio, 4),
-        "top_drivers": _build_top_drivers(account_id, incoming, outgoing, pass_through_ratio, df),
+        "top_drivers": _build_top_drivers(
+            account_id,
+            incoming,
+            outgoing,
+            pass_through_ratio,
+            df,
+            amount_p95=idx.amount_p95,
+            in_ts=in_ts,
+            out_ts=out_ts,
+        ),
         "counterparties": counterparties,
     }
 
